@@ -1,5 +1,5 @@
 [package]
-name = "keychaincerts"
+name = "osclientcerts"
 version = "0.1.0"
 authors = ["Dana Keeler <dkeeler@mozilla.com>"]
 edition = "2018"
@@ -7,5 +7,5 @@ edition = "2018"
 [dependencies]
 
 [lib]
-name = "keychaincerts"
+name = "osclientcerts"
 crate-type = ["cdylib"]
