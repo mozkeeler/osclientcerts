@@ -1,10 +1,22 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+#![allow(non_upper_case_globals)]
 #![allow(unused_variables)]
 
+#[macro_use]
+extern crate lazy_static;
+
+mod implementation;
 mod types;
 
+use implementation::Implementation;
 use types::*;
+
+use std::sync::Mutex;
+
+lazy_static! {
+    static ref IMPL: Mutex<Implementation> = Mutex::new(Implementation::new());
+}
 
 extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
     eprintln!("C_Initialize: CKR_OK");
@@ -152,16 +164,33 @@ extern "C" fn C_OpenSession(
     Notify: CK_NOTIFY,
     phSession: CK_SESSION_HANDLE_PTR,
 ) -> CK_RV {
-    eprintln!("C_OpenSession: CKR_FUNCTION_NOT_SUPPORTED");
-    CKR_FUNCTION_NOT_SUPPORTED
+    eprint!("C_OpenSession: ");
+    if slotID != SLOT_ID || phSession.is_null() {
+        eprintln!("CKR_ARGUMENTS_BAD");
+        return CKR_ARGUMENTS_BAD;
+    }
+    let mut implementation = IMPL.lock().unwrap();
+    let session_handle = implementation.open_session();
+    unsafe {
+        *phSession = session_handle;
+    }
+    eprintln!("CKR_OK");
+    CKR_OK
 }
 extern "C" fn C_CloseSession(hSession: CK_SESSION_HANDLE) -> CK_RV {
     eprintln!("C_CloseSession: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 extern "C" fn C_CloseAllSessions(slotID: CK_SLOT_ID) -> CK_RV {
-    eprintln!("C_CloseAllSessions: CKR_FUNCTION_NOT_SUPPORTED");
-    CKR_FUNCTION_NOT_SUPPORTED
+    eprint!("C_CloseAllSessions: ");
+    if slotID != SLOT_ID {
+        eprintln!("CKR_ARGUMENTS_BAD");
+        return CKR_ARGUMENTS_BAD;
+    }
+    let mut implementation = IMPL.lock().unwrap();
+    implementation.close_all_sessions();
+    eprintln!("CKR_OK");
+    CKR_OK
 }
 extern "C" fn C_GetSessionInfo(hSession: CK_SESSION_HANDLE, pInfo: CK_SESSION_INFO_PTR) -> CK_RV {
     eprintln!("C_GetSessionInfo: CKR_FUNCTION_NOT_SUPPORTED");
@@ -252,8 +281,35 @@ extern "C" fn C_FindObjectsInit(
     pTemplate: CK_ATTRIBUTE_PTR,
     ulCount: CK_ULONG,
 ) -> CK_RV {
-    eprintln!("C_FindObjectsInit: CKR_FUNCTION_NOT_SUPPORTED");
-    CKR_FUNCTION_NOT_SUPPORTED
+    eprint!("C_FindObjectsInit: ");
+    eprintln!("");
+    // TODO: check hSession valid, insert new find
+    if pTemplate.is_null() {
+        eprintln!("CKR_ARGUMENTS_BAD");
+        return CKR_ARGUMENTS_BAD;
+    }
+    for i in 0..ulCount {
+        let attr = unsafe { &*pTemplate.offset(i as isize) };
+        if attr.type_ == CKA_CLASS {
+            let val = if attr.ulValueLen == 8 {
+                unsafe { *(attr.pValue as *const u64) }
+            } else if attr.ulValueLen == 4 {
+                unsafe { *(attr.pValue as *const u32) as u64 }
+            } else {
+                eprintln!("CKR_ARGUMENTS_BAD");
+                return CKR_ARGUMENTS_BAD;
+            };
+            if val > CKO_NSS {
+                eprintln!("    CKA_CLASS NSS + {:x}", val - CKO_NSS);
+            } else {
+                eprintln!("    CKA_CLASS {:x}", val);
+            }
+        } else {
+            eprintln!("    {:?}", attr);
+        }
+    }
+    eprintln!("CKR_OK");
+    CKR_OK
 }
 extern "C" fn C_FindObjects(
     hSession: CK_SESSION_HANDLE,
@@ -261,12 +317,24 @@ extern "C" fn C_FindObjects(
     ulMaxObjectCount: CK_ULONG,
     pulObjectCount: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_FindObjects: CKR_FUNCTION_NOT_SUPPORTED");
-    CKR_FUNCTION_NOT_SUPPORTED
+    eprint!("C_FindObjects: ");
+    // TODO: check hSession valid, return results
+    if phObject.is_null() || pulObjectCount.is_null() {
+        eprintln!("CKR_ARGUMENTS_BAD");
+        return CKR_ARGUMENTS_BAD;
+    }
+    // for now, just return empty results
+    unsafe {
+        *pulObjectCount = 0;
+    }
+    eprintln!("CKR_OK");
+    CKR_OK
 }
 extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    eprintln!("C_FindObjectsFinal: CKR_FUNCTION_NOT_SUPPORTED");
-    CKR_FUNCTION_NOT_SUPPORTED
+    eprint!("C_FindObjectsFinal: ");
+    // TODO: check hSession valid
+    eprintln!("CKR_OK");
+    CKR_OK
 }
 extern "C" fn C_EncryptInit(
     hSession: CK_SESSION_HANDLE,
@@ -681,7 +749,6 @@ static FUNCTION_LIST: CK_FUNCTION_LIST = CK_FUNCTION_LIST {
     C_WaitForSlotEvent: Some(C_WaitForSlotEvent),
 };
 
-#[allow(non_snake_case)]
 #[no_mangle]
 pub extern "C" fn C_GetFunctionList(ppFunctionList: CK_FUNCTION_LIST_PTR_PTR) -> CK_RV {
     unsafe {
