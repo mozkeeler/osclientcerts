@@ -6,7 +6,11 @@ use std::path::PathBuf;
 fn main() {
     let bindings = bindgen::Builder::default()
         .header("src/wrapper.h")
+        .blacklist_type("CFDictionaryRef")
+        .blacklist_type("CFStringRef")
         .whitelist_function("SecItemCopyMatching")
+        .whitelist_function("^SecKey.*")
+        .whitelist_var("^kSec.*")
         .generate()
         .expect("Unable to generate bindings");
     let out_path = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR unset?"));

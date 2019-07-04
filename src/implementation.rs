@@ -1,9 +1,4 @@
-#![allow(non_camel_case_types)]
-#![allow(non_snake_case)]
-#![allow(non_upper_case_globals)]
-#![allow(unused_variables)]
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-
+use crate::macos_backend::*;
 use crate::types::*;
 
 use std::collections::BTreeSet;
@@ -30,5 +25,9 @@ impl Implementation {
 
     pub fn close_all_sessions(&mut self) {
         self.sessions.clear();
+    }
+
+    pub fn find_certs(&mut self) {
+        list_keys();
     }
 }

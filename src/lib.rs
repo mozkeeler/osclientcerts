@@ -3,10 +3,15 @@
 #![allow(non_upper_case_globals)]
 #![allow(unused_variables)]
 
+#[link(name = "Security", kind = "framework")]
+extern "C" {}
+
+extern crate core_foundation;
 #[macro_use]
 extern crate lazy_static;
 
 mod implementation;
+mod macos_backend;
 mod types;
 
 use implementation::Implementation;
@@ -308,6 +313,8 @@ extern "C" fn C_FindObjectsInit(
             eprintln!("    {:?}", attr);
         }
     }
+    let mut implementation = IMPL.lock().unwrap();
+    implementation.find_certs();
     eprintln!("CKR_OK");
     CKR_OK
 }
