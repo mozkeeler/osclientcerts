@@ -6,6 +6,7 @@
 #[link(name = "Security", kind = "framework")]
 extern "C" {}
 
+#[macro_use]
 extern crate core_foundation;
 #[macro_use]
 extern crate lazy_static;

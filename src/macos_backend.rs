@@ -14,12 +14,44 @@ use core_foundation::string::*;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-pub fn list_keys() {
+use std::os::raw::c_void;
+
+#[repr(C)]
+pub struct __SecIdentity(c_void);
+pub type SecIdentityRef = *const __SecIdentity;
+declare_TCFType!(SecIdentity, SecIdentityRef);
+impl_TCFType!(SecIdentity, SecIdentityRef, SecIdentityGetTypeID);
+
+pub struct Cert {
+    handle: SecIdentity,
+}
+
+impl Cert {
+    fn new(handle: SecIdentity) -> Cert {
+        Cert { handle }
+    }
+}
+
+pub fn list_certs() -> Vec<Cert> {
+    let mut certs = Vec::new();
+    if let Some(identities) = list_identities() {
+        for identity in identities.iter() {
+            certs.push(Cert::new(identity.clone()));
+        }
+    }
+    certs
+}
+
+// Really what we have to do is return persistent references (kSecReturnPersistentRef) so that our
+// manager can hold on to them safely across threads. When we do anything with them, we'll have to
+// get them back with SecItemCopyMatching({ kSecMatchItemList: [id] }).
+// https://developer.apple.com/documentation/security/keychain_services/keychain_items/item_return_result_keys
+pub fn list_identities() -> Option<CFArray<SecIdentity>> {
     unsafe {
         let status = SecKeychainUnlock(std::ptr::null_mut(), 0, std::ptr::null(), 0);
         if status != errSecSuccess {
             eprintln!("SecKeychainUnlock failed: {}", status);
-            return;
+            return None;
         }
         let class_key = CFString::wrap_under_get_rule(kSecClass);
         let class_value = CFString::wrap_under_get_rule(kSecClassIdentity);
@@ -37,13 +69,14 @@ pub fn list_keys() {
         let status = SecItemCopyMatching(dict.as_CFTypeRef() as CFDictionaryRef, &mut result);
         if status != errSecSuccess {
             eprintln!("SecItemCopyMatching failed: {}", status);
-            return;
+            return None;
         }
         if result.is_null() {
             eprintln!("no client certs?");
-            return;
+            return None;
         }
-        let result: CFArray<CFDictionary> = CFArray::wrap_under_create_rule(result as CFArrayRef);
+        let result: CFArray<SecIdentity> = CFArray::wrap_under_get_rule(result as CFArrayRef);
         eprintln!("{}", result.len());
+        Some(result)
     }
 }
