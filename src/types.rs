@@ -2,6 +2,8 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 
+use std::fmt;
+
 pub type CK_BYTE = ::std::os::raw::c_uchar;
 pub type CK_CHAR = CK_BYTE;
 pub type CK_UTF8CHAR = CK_BYTE;
@@ -93,6 +95,7 @@ pub type CK_SESSION_INFO_PTR = *mut CK_SESSION_INFO;
 pub type CK_OBJECT_HANDLE = CK_ULONG;
 pub type CK_OBJECT_HANDLE_PTR = *mut CK_OBJECT_HANDLE;
 pub type CK_ATTRIBUTE_TYPE = CK_ULONG;
+pub type CK_OBJECT_CLASS = CK_ULONG;
 #[repr(C)]
 #[derive(Debug, Copy)]
 pub struct CK_ATTRIBUTE {
@@ -103,6 +106,27 @@ pub struct CK_ATTRIBUTE {
 impl Clone for CK_ATTRIBUTE {
     fn clone(&self) -> Self {
         *self
+    }
+}
+impl fmt::Display for CK_ATTRIBUTE {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let type_ = match self.type_ {
+            CKA_TOKEN => "CKA_TOKEN".to_owned(),
+            CKA_CLASS => "CKA_CLASS".to_owned(),
+            _ => format!("{:?}", self.type_),
+        };
+        // TODO: this isn't quite what we want to do...
+        let value = match self.ulValueLen {
+            1 => format!("{}", unsafe { *(self.pValue as *const u8) }),
+            4 => format!("0x{:x}", unsafe { *(self.pValue as *const u32) }),
+            8 => format!("0x{:x}", unsafe { *(self.pValue as *const u64) }),
+            _ => format!("{:?}", self.pValue),
+        };
+        write!(
+            f,
+            "CK_ATTRIBUTE {{ type: {}, value: {}, len: {:?} }}",
+            type_, value, self.ulValueLen
+        )
     }
 }
 pub type CK_ATTRIBUTE_PTR = *mut CK_ATTRIBUTE;
@@ -709,5 +733,8 @@ pub const CKR_BUFFER_TOO_SMALL: CK_RV = 336;
 pub const CKF_TOKEN_PRESENT: CK_FLAGS = 1;
 
 pub const CKA_CLASS: CK_ATTRIBUTE_TYPE = 0;
+pub const CKA_TOKEN: CK_ATTRIBUTE_TYPE = 1;
 
 pub const CKO_NSS: u64 = 0x80000000 | 0x4E534350;
+
+pub const CKO_CERTIFICATE: CK_OBJECT_CLASS = 1;

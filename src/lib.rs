@@ -295,23 +295,7 @@ extern "C" fn C_FindObjectsInit(
     }
     for i in 0..ulCount {
         let attr = unsafe { &*pTemplate.offset(i as isize) };
-        if attr.type_ == CKA_CLASS {
-            let val = if attr.ulValueLen == 8 {
-                unsafe { *(attr.pValue as *const u64) }
-            } else if attr.ulValueLen == 4 {
-                unsafe { *(attr.pValue as *const u32) as u64 }
-            } else {
-                eprintln!("CKR_ARGUMENTS_BAD");
-                return CKR_ARGUMENTS_BAD;
-            };
-            if val > CKO_NSS {
-                eprintln!("    CKA_CLASS NSS + {:x}", val - CKO_NSS);
-            } else {
-                eprintln!("    CKA_CLASS {:x}", val);
-            }
-        } else {
-            eprintln!("    {:?}", attr);
-        }
+        eprintln!("    {}", attr);
     }
     let mut implementation = IMPL.lock().unwrap();
     implementation.find_certs();
