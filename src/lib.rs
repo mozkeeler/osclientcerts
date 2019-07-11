@@ -294,15 +294,29 @@ extern "C" fn C_FindObjectsInit(
         eprintln!("CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
+    let mut found_unknown_attribute = false;
+    let mut class_type = None;
     for i in 0..ulCount {
         let attr = unsafe { &*pTemplate.offset(i as isize) };
         eprintln!("    {}", attr);
+        match attr.type_ {
+            CKA_CLASS => class_type = attr.value_as_int(),
+            CKA_TOKEN => {}
+            _ => found_unknown_attribute = true,
+        };
     }
-    let mut implementation = IMPL.lock().unwrap();
-    implementation.find_certs();
+    if !found_unknown_attribute {
+        if let Some(class_type) = class_type {
+            if class_type == CKO_CERTIFICATE {
+                let mut implementation = IMPL.lock().unwrap();
+                implementation.find_certs(hSession, false);
+            }
+        }
+    }
     eprintln!("CKR_OK");
     CKR_OK
 }
+
 extern "C" fn C_FindObjects(
     hSession: CK_SESSION_HANDLE,
     phObject: CK_OBJECT_HANDLE_PTR,
@@ -315,13 +329,29 @@ extern "C" fn C_FindObjects(
         eprintln!("CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    // for now, just return empty results
-    unsafe {
-        *pulObjectCount = 0;
+    let mut implementation = IMPL.lock().unwrap();
+    if let Some(handles) = implementation.find_certs(hSession, true) {
+        // TODO: not quite sure what the right semantics are re. if we have more handles than ulMaxObjectCount
+        unsafe {
+            *pulObjectCount = handles.len() as CK_ULONG;
+        }
+        if !phObject.is_null() {
+            for (index, handle) in handles.iter().enumerate() {
+                if index < ulMaxObjectCount as usize {
+                    unsafe {
+                        *(phObject.offset(index as isize)) = *handle;
+                    }
+                }
+            }
+        }
+        eprintln!("CKR_OK");
+        CKR_OK
+    } else {
+        eprintln!("CKR_ARGUMENTS_BAD");
+        CKR_ARGUMENTS_BAD
     }
-    eprintln!("CKR_OK");
-    CKR_OK
 }
+
 extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {
     eprint!("C_FindObjectsFinal: ");
     // TODO: check hSession valid

@@ -33,17 +33,30 @@ impl Implementation {
         self.sessions.clear();
     }
 
-    fn get_next_handle(&mut self) -> CK_SESSION_HANDLE {
+    fn get_next_handle(&mut self) -> CK_OBJECT_HANDLE {
         let next_handle = self.next_handle;
         self.next_handle += 1;
         next_handle
     }
 
-    pub fn find_certs(&mut self, session: CK_SESSION_HANDLE) {
-        let mut certs = list_certs();
-        let certs_and_handles = Vec::with_capacity(certs.len());
-        for cert in certs {
-            certs_and_handles.push((cert, self.get_next_handle()));
+    pub fn find_certs(
+        &mut self,
+        session: CK_SESSION_HANDLE,
+        expect_already_exists: bool,
+    ) -> Option<&Vec<CK_OBJECT_HANDLE>> {
+        if !self.searches.contains_key(&session) {
+            if expect_already_exists {
+                return None;
+            }
+            let certs = list_certs();
+            let mut handles = Vec::with_capacity(certs.len());
+            for cert in certs {
+                let handle = self.get_next_handle();
+                self.certs.insert(handle, cert);
+                handles.push(handle);
+            }
+            self.searches.insert(session, handles);
         }
+        self.searches.get(&session)
     }
 }

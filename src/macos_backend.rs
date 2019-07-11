@@ -22,31 +22,35 @@ pub type SecIdentityRef = *const __SecIdentity;
 declare_TCFType!(SecIdentity, SecIdentityRef);
 impl_TCFType!(SecIdentity, SecIdentityRef, SecIdentityGetTypeID);
 
+// id is a persistent reference that refers to a SecIdentity that was retrieved
+// via kSecReturnPersistentRef. It can be used with SecItemCopyMatching with
+// kSecItemMatchList to obtain a handle on the original SecIdentity.
+// https://developer.apple.com/documentation/security/keychain_services/keychain_items/item_return_result_keys
 pub struct Cert {
-    handle: SecIdentity,
+    id: Vec<u8>,
 }
 
 impl Cert {
-    fn new(handle: SecIdentity) -> Cert {
-        Cert { handle }
+    fn new(persistent_ref: &CFData) -> Cert {
+        Cert {
+            id: persistent_ref.to_vec(),
+        }
     }
 }
 
 pub fn list_certs() -> Vec<Cert> {
     let mut certs = Vec::new();
-    if let Some(identities) = list_identities() {
+    if let Some(identities) = list_identities_as_persistent_refs() {
         for identity in identities.iter() {
-            certs.push(Cert::new(identity.clone()));
+            certs.push(Cert::new(&identity));
         }
     }
     certs
 }
 
-// Really what we have to do is return persistent references (kSecReturnPersistentRef) so that our
-// manager can hold on to them safely across threads. When we do anything with them, we'll have to
-// get them back with SecItemCopyMatching({ kSecMatchItemList: [id] }).
-// https://developer.apple.com/documentation/security/keychain_services/keychain_items/item_return_result_keys
-pub fn list_identities() -> Option<CFArray<SecIdentity>> {
+// Attempt to list all known `SecIdentity`s as persistent identifiers that we
+// can cache for use later.
+fn list_identities_as_persistent_refs() -> Option<CFArray<CFData>> {
     unsafe {
         let status = SecKeychainUnlock(std::ptr::null_mut(), 0, std::ptr::null(), 0);
         if status != errSecSuccess {
@@ -55,7 +59,7 @@ pub fn list_identities() -> Option<CFArray<SecIdentity>> {
         }
         let class_key = CFString::wrap_under_get_rule(kSecClass);
         let class_value = CFString::wrap_under_get_rule(kSecClassIdentity);
-        let return_ref_key = CFString::wrap_under_get_rule(kSecReturnRef);
+        let return_ref_key = CFString::wrap_under_get_rule(kSecReturnPersistentRef);
         let return_ref_value = CFBoolean::wrap_under_get_rule(kCFBooleanTrue);
         let match_key = CFString::wrap_under_get_rule(kSecMatchLimit);
         let match_value = CFString::wrap_under_get_rule(kSecMatchLimitAll);
@@ -75,7 +79,7 @@ pub fn list_identities() -> Option<CFArray<SecIdentity>> {
             eprintln!("no client certs?");
             return None;
         }
-        let result: CFArray<SecIdentity> = CFArray::wrap_under_get_rule(result as CFArrayRef);
+        let result: CFArray<CFData> = CFArray::wrap_under_get_rule(result as CFArrayRef);
         eprintln!("{}", result.len());
         Some(result)
     }

@@ -103,6 +103,16 @@ pub struct CK_ATTRIBUTE {
     pub pValue: CK_VOID_PTR,
     pub ulValueLen: CK_ULONG,
 }
+impl CK_ATTRIBUTE {
+    pub fn value_as_int(&self) -> Option<u64> {
+        match self.ulValueLen {
+            1 => Some(unsafe { *(self.pValue as *const u8) } as u64),
+            4 => Some(unsafe { *(self.pValue as *const u32) } as u64),
+            8 => Some(unsafe { *(self.pValue as *const u64) } as u64),
+            _ => None,
+        }
+    }
+}
 impl Clone for CK_ATTRIBUTE {
     fn clone(&self) -> Self {
         *self
