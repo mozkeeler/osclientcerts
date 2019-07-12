@@ -3,7 +3,7 @@ use crate::types::*;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-pub struct Implementation {
+pub struct Manager {
     sessions: BTreeSet<CK_SESSION_HANDLE>,
     searches: BTreeMap<CK_SESSION_HANDLE, Vec<CK_OBJECT_HANDLE>>,
     certs: BTreeMap<CK_OBJECT_HANDLE, Cert>,
@@ -11,9 +11,9 @@ pub struct Implementation {
     next_handle: CK_OBJECT_HANDLE,
 }
 
-impl Implementation {
-    pub fn new() -> Implementation {
-        Implementation {
+impl Manager {
+    pub fn new() -> Manager {
+        Manager {
             sessions: BTreeSet::new(),
             searches: BTreeMap::new(),
             certs: BTreeMap::new(),

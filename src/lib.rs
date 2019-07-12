@@ -11,17 +11,17 @@ extern crate core_foundation;
 #[macro_use]
 extern crate lazy_static;
 
-mod implementation;
 mod macos_backend;
+mod manager;
 mod types;
 
-use implementation::Implementation;
+use manager::Manager;
 use types::*;
 
 use std::sync::Mutex;
 
 lazy_static! {
-    static ref IMPL: Mutex<Implementation> = Mutex::new(Implementation::new());
+    static ref IMPL: Mutex<Manager> = Mutex::new(Manager::new());
 }
 
 extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
@@ -175,8 +175,8 @@ extern "C" fn C_OpenSession(
         eprintln!("CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let mut implementation = IMPL.lock().unwrap();
-    let session_handle = implementation.open_session();
+    let mut manager = IMPL.lock().unwrap();
+    let session_handle = manager.open_session();
     unsafe {
         *phSession = session_handle;
     }
@@ -193,8 +193,8 @@ extern "C" fn C_CloseAllSessions(slotID: CK_SLOT_ID) -> CK_RV {
         eprintln!("CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let mut implementation = IMPL.lock().unwrap();
-    implementation.close_all_sessions();
+    let mut manager = IMPL.lock().unwrap();
+    manager.close_all_sessions();
     eprintln!("CKR_OK");
     CKR_OK
 }
@@ -308,8 +308,8 @@ extern "C" fn C_FindObjectsInit(
     if !found_unknown_attribute {
         if let Some(class_type) = class_type {
             if class_type == CKO_CERTIFICATE {
-                let mut implementation = IMPL.lock().unwrap();
-                implementation.find_certs(hSession, false);
+                let mut manager = IMPL.lock().unwrap();
+                manager.find_certs(hSession, false);
             }
         }
     }
@@ -329,8 +329,8 @@ extern "C" fn C_FindObjects(
         eprintln!("CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let mut implementation = IMPL.lock().unwrap();
-    if let Some(handles) = implementation.find_certs(hSession, true) {
+    let mut manager = IMPL.lock().unwrap();
+    if let Some(handles) = manager.find_certs(hSession, true) {
         // TODO: not quite sure what the right semantics are re. if we have more handles than ulMaxObjectCount
         unsafe {
             *pulObjectCount = handles.len() as CK_ULONG;
