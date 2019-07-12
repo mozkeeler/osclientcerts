@@ -10,6 +10,8 @@ extern "C" {}
 extern crate core_foundation;
 #[macro_use]
 extern crate lazy_static;
+extern crate hex;
+extern crate sha2;
 
 mod macos_backend;
 mod manager;
@@ -270,8 +272,74 @@ extern "C" fn C_GetAttributeValue(
     pTemplate: CK_ATTRIBUTE_PTR,
     ulCount: CK_ULONG,
 ) -> CK_RV {
-    eprintln!("C_GetAttributeValue: CKR_FUNCTION_NOT_SUPPORTED");
-    CKR_FUNCTION_NOT_SUPPORTED
+    eprintln!("C_GetAttributeValue:");
+    if pTemplate.is_null() {
+        eprintln!("CKR_ARGUMENTS_BAD");
+        return CKR_ARGUMENTS_BAD;
+    }
+    // TODO: check hSession
+    let mut manager = IMPL.lock().unwrap();
+    let cert = if let Some(cert) = manager.find_cert(hSession) {
+        cert
+    } else {
+        eprintln!("CKR_ARGUMENTS_BAD");
+        return CKR_ARGUMENTS_BAD;
+    };
+    for i in 0..ulCount {
+        let mut attr = unsafe { &mut *pTemplate.offset(i as isize) };
+        eprintln!("    {}", attr);
+        match attr.type_ {
+            CKA_TOKEN => {
+                if attr.pValue.is_null() {
+                    attr.ulValueLen = 1;
+                } else {
+                    unsafe {
+                        *(attr.pValue as *mut u8) = 1;
+                    }
+                }
+            }
+            CKA_LABEL => {
+                let label = cert.label();
+                eprintln!("    {}", label);
+                if attr.pValue.is_null() {
+                    attr.ulValueLen = label.len() as CK_ULONG;
+                } else {
+                    unsafe {
+                        let ptr: *mut u8 = attr.pValue as *mut u8;
+                        std::ptr::copy_nonoverlapping(
+                            label.as_ptr(),
+                            ptr,
+                            attr.ulValueLen as usize,
+                        );
+                    }
+                }
+            }
+            CKA_VALUE => {
+                let cert_bytes = match cert.bytes() {
+                    Some(bytes) => bytes,
+                    None => Vec::new(),
+                };
+                if attr.pValue.is_null() {
+                    attr.ulValueLen = cert_bytes.len() as CK_ULONG;
+                } else {
+                    unsafe {
+                        let ptr: *mut u8 = attr.pValue as *mut u8;
+                        // TODO: err... check that we aren't copying more than cert_bytes actually has
+                        std::ptr::copy_nonoverlapping(
+                            cert_bytes.as_ptr(),
+                            ptr,
+                            attr.ulValueLen as usize,
+                        );
+                    }
+                }
+            }
+            _ => {
+                attr.ulValueLen = (0 - 1) as CK_ULONG;
+            }
+        }
+    }
+    eprintln!("CKR_OK");
+    CKR_OK
 }
 extern "C" fn C_SetAttributeValue(
     hSession: CK_SESSION_HANDLE,
@@ -305,13 +373,12 @@ extern "C" fn C_FindObjectsInit(
             _ => found_unknown_attribute = true,
         };
     }
-    if !found_unknown_attribute {
-        if let Some(class_type) = class_type {
-            if class_type == CKO_CERTIFICATE {
-                let mut manager = IMPL.lock().unwrap();
-                manager.find_certs(hSession, false);
-            }
+    match class_type {
+        Some(class_type) if !found_unknown_attribute && class_type == CKO_CERTIFICATE => {
+            let mut manager = IMPL.lock().unwrap();
+            manager.find_certs(hSession, false);
         }
+        _ => {}
     }
     eprintln!("CKR_OK");
     CKR_OK

@@ -7,6 +7,8 @@ edition = "2018"
 [dependencies]
 lazy_static = "1"
 core-foundation = "0.6"
+sha2 = "0.8"
+hex = "0.3"
 
 [build-dependencies]
 bindgen = "0.49"

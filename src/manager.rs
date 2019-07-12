@@ -59,4 +59,8 @@ impl Manager {
         }
         self.searches.get(&session)
     }
+
+    pub fn find_cert(&mut self, object_handle: CK_OBJECT_HANDLE) -> Option<&Cert> {
+        self.certs.get(&object_handle)
+    }
 }

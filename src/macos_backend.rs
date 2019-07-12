@@ -12,6 +12,8 @@ use core_foundation::dictionary::*;
 use core_foundation::error::*;
 use core_foundation::string::*;
 
+use sha2::{Digest, Sha256};
+
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use std::os::raw::c_void;
@@ -21,6 +23,12 @@ pub struct __SecIdentity(c_void);
 pub type SecIdentityRef = *const __SecIdentity;
 declare_TCFType!(SecIdentity, SecIdentityRef);
 impl_TCFType!(SecIdentity, SecIdentityRef, SecIdentityGetTypeID);
+
+#[repr(C)]
+pub struct __SecCertificate(c_void);
+pub type SecCertificateRef = *const __SecCertificate;
+declare_TCFType!(SecCertificate, SecCertificateRef);
+impl_TCFType!(SecCertificate, SecCertificateRef, SecCertificateGetTypeID);
 
 // id is a persistent reference that refers to a SecIdentity that was retrieved
 // via kSecReturnPersistentRef. It can be used with SecItemCopyMatching with
@@ -36,6 +44,14 @@ impl Cert {
             id: persistent_ref.to_vec(),
         }
     }
+
+    pub fn label(&self) -> String {
+        hex::encode(Sha256::digest(&self.id))
+    }
+
+    pub fn bytes(&self) -> Option<Vec<u8>> {
+        get_cert_bytes(&self.id)
+    }
 }
 
 pub fn list_certs() -> Vec<Cert> {
@@ -46,6 +62,56 @@ pub fn list_certs() -> Vec<Cert> {
         }
     }
     certs
+}
+
+fn get_cert_bytes(id: &[u8]) -> Option<Vec<u8>> {
+    unsafe {
+        let status = SecKeychainUnlock(std::ptr::null_mut(), 0, std::ptr::null(), 0);
+        if status != errSecSuccess {
+            eprintln!("SecKeychainUnlock failed: {}", status);
+            return None;
+        }
+        let id_data_slice = [CFData::from_buffer(id).as_CFType()];
+        let ids = CFArray::from_CFTypes(&id_data_slice);
+
+        let class_key = CFString::wrap_under_get_rule(kSecClass);
+        let class_value = CFString::wrap_under_get_rule(kSecClassIdentity);
+        let match_key = CFString::wrap_under_get_rule(kSecMatchItemList);
+        let match_value = ids;
+        let return_ref_key = CFString::wrap_under_get_rule(kSecReturnRef);
+        let return_ref_value = CFBoolean::wrap_under_get_rule(kCFBooleanTrue);
+        let vals = vec![
+            (class_key.as_CFType(), class_value.as_CFType()),
+            (match_key.as_CFType(), match_value.as_CFType()),
+            (return_ref_key.as_CFType(), return_ref_value.as_CFType()),
+        ];
+        let dict = CFDictionary::from_CFType_pairs(&vals);
+        let mut identity = std::ptr::null();
+        let status = SecItemCopyMatching(dict.as_CFTypeRef() as CFDictionaryRef, &mut identity);
+        if status != errSecSuccess {
+            eprintln!("SecItemCopyMatching failed: {}", status);
+            return None;
+        }
+        if identity.is_null() {
+            eprintln!("couldn't get ref from id?");
+            return None;
+        }
+        let identity: SecIdentityRef = identity as SecIdentityRef;
+        let mut certificate = std::ptr::null();
+        let status = SecIdentityCopyCertificate(identity, &mut certificate);
+        if status != errSecSuccess {
+            eprintln!("SecIdentityCopyCertificate failed: {}", status);
+            return None;
+        }
+        if certificate.is_null() {
+            eprintln!("couldn't get certificate from identity?");
+            return None;
+        }
+        let certificate: SecCertificateRef = certificate as SecCertificateRef;
+        let bytes = CFData::wrap_under_get_rule(SecCertificateCopyData(certificate));
+        let bytes: Vec<u8> = bytes.bytes().to_vec();
+        Some(bytes)
+    }
 }
 
 // Attempt to list all known `SecIdentity`s as persistent identifiers that we

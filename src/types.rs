@@ -121,8 +121,9 @@ impl Clone for CK_ATTRIBUTE {
 impl fmt::Display for CK_ATTRIBUTE {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let type_ = match self.type_ {
-            CKA_TOKEN => "CKA_TOKEN".to_owned(),
             CKA_CLASS => "CKA_CLASS".to_owned(),
+            CKA_TOKEN => "CKA_TOKEN".to_owned(),
+            CKA_LABEL => "CKA_LABEL".to_owned(),
             _ => format!("{:?}", self.type_),
         };
         // TODO: this isn't quite what we want to do...
@@ -744,6 +745,8 @@ pub const CKF_TOKEN_PRESENT: CK_FLAGS = 1;
 
 pub const CKA_CLASS: CK_ATTRIBUTE_TYPE = 0;
 pub const CKA_TOKEN: CK_ATTRIBUTE_TYPE = 1;
+pub const CKA_LABEL: CK_ATTRIBUTE_TYPE = 3;
+pub const CKA_VALUE: CK_ATTRIBUTE_TYPE = 17;
 
 pub const CKO_NSS: u64 = 0x80000000 | 0x4E534350;
 
