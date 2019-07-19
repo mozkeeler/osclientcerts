@@ -11,13 +11,12 @@ extern crate core_foundation;
 #[macro_use]
 extern crate lazy_static;
 extern crate hex;
-extern crate sha2;
 
 mod macos_backend;
 mod manager;
 mod types;
 
-use manager::Manager;
+use manager::{Cert, Manager};
 use types::*;
 
 use std::sync::Mutex;
@@ -314,6 +313,20 @@ extern "C" fn C_GetAttributeValue(
                         }
                     }
                 }
+                CKA_ID => {
+                    if attr.pValue.is_null() {
+                        attr.ulValueLen = 2;
+                    } else {
+                        unsafe {
+                            let ptr: *mut u8 = attr.pValue as *mut u8;
+                            std::ptr::copy_nonoverlapping(
+                                "0".as_ptr(),
+                                ptr,
+                                attr.ulValueLen as usize,
+                            );
+                        }
+                    }
+                }
                 _ => {
                     attr.ulValueLen = (0 - 1) as CK_ULONG;
                 }
@@ -324,11 +337,9 @@ extern "C" fn C_GetAttributeValue(
     CKR_OK
 }
 
-fn get_attribute_from_cert(
-    cert: &crate::macos_backend::Cert,
-    attribute: CK_ATTRIBUTE_TYPE,
-) -> Option<&[u8]> {
+fn get_attribute_from_cert(cert: &Cert, attribute: CK_ATTRIBUTE_TYPE) -> Option<&[u8]> {
     let result = match attribute {
+        CKA_LABEL => cert.label(),
         CKA_VALUE => cert.value(),
         CKA_ISSUER => cert.issuer(),
         CKA_SERIAL_NUMBER => cert.serial_number(),

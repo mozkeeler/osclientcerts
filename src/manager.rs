@@ -1,4 +1,4 @@
-use crate::macos_backend::*;
+pub use crate::macos_backend::*;
 use crate::types::*;
 
 use std::collections::{BTreeMap, BTreeSet};

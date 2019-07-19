@@ -12,8 +12,6 @@ use core_foundation::dictionary::*;
 use core_foundation::error::*;
 use core_foundation::string::*;
 
-use sha2::{Digest, Sha256};
-
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use std::os::raw::c_void;
@@ -44,8 +42,8 @@ pub struct Cert {
 }
 
 impl Cert {
-    pub fn label(&self) -> String {
-        hex::encode(Sha256::digest(&self.id))
+    pub fn label(&self) -> &[u8] {
+        &self.label
     }
 
     pub fn value(&self) -> &[u8] {
@@ -121,18 +119,25 @@ fn get_cert_helper(id: &CFData) -> Option<Cert> {
             return None;
         }
         let certificate: SecCertificateRef = certificate as SecCertificateRef;
+        let label = CFString::wrap_under_create_rule(SecCertificateCopySubjectSummary(certificate));
         let der = CFData::wrap_under_create_rule(SecCertificateCopyData(certificate));
+        let issuer =
+            CFData::wrap_under_create_rule(SecCertificateCopyNormalizedIssuerSequence(certificate));
         let serial_number = CFData::wrap_under_create_rule(SecCertificateCopySerialNumberData(
             certificate,
             std::ptr::null_mut(),
         ));
+        let subject = CFData::wrap_under_create_rule(SecCertificateCopyNormalizedSubjectSequence(
+            certificate,
+        ));
+
         Some(Cert {
             id: id.bytes().to_vec(),
-            label: hex::encode(Sha256::digest(id)).into_bytes(),
+            label: label.to_string().into_bytes(),
             der: der.bytes().to_vec(),
-            issuer: Vec::new(),
+            issuer: issuer.bytes().to_vec(),
             serial_number: serial_number.bytes().to_vec(),
-            subject: Vec::new(),
+            subject: subject.bytes().to_vec(),
         })
     }
 }
