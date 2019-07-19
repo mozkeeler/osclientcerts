@@ -36,21 +36,32 @@ impl_TCFType!(SecCertificate, SecCertificateRef, SecCertificateGetTypeID);
 // https://developer.apple.com/documentation/security/keychain_services/keychain_items/item_return_result_keys
 pub struct Cert {
     id: Vec<u8>,
+    label: Vec<u8>,
+    der: Vec<u8>,
+    issuer: Vec<u8>,
+    serial_number: Vec<u8>,
+    subject: Vec<u8>,
 }
 
 impl Cert {
-    fn new(persistent_ref: &CFData) -> Cert {
-        Cert {
-            id: persistent_ref.to_vec(),
-        }
-    }
-
     pub fn label(&self) -> String {
         hex::encode(Sha256::digest(&self.id))
     }
 
-    pub fn bytes(&self) -> Option<Vec<u8>> {
-        get_cert_bytes(&self.id)
+    pub fn value(&self) -> &[u8] {
+        &self.der
+    }
+
+    pub fn issuer(&self) -> &[u8] {
+        &self.issuer
+    }
+
+    pub fn serial_number(&self) -> &[u8] {
+        &self.serial_number
+    }
+
+    pub fn subject(&self) -> &[u8] {
+        &self.subject
     }
 }
 
@@ -58,20 +69,22 @@ pub fn list_certs() -> Vec<Cert> {
     let mut certs = Vec::new();
     if let Some(identities) = list_identities_as_persistent_refs() {
         for identity in identities.iter() {
-            certs.push(Cert::new(&identity));
+            if let Some(cert) = get_cert_helper(&identity) {
+                certs.push(cert);
+            }
         }
     }
     certs
 }
 
-fn get_cert_bytes(id: &[u8]) -> Option<Vec<u8>> {
+fn get_cert_helper(id: &CFData) -> Option<Cert> {
     unsafe {
         let status = SecKeychainUnlock(std::ptr::null_mut(), 0, std::ptr::null(), 0);
         if status != errSecSuccess {
             eprintln!("SecKeychainUnlock failed: {}", status);
             return None;
         }
-        let id_data_slice = [CFData::from_buffer(id).as_CFType()];
+        let id_data_slice = [id.as_CFType()];
         let ids = CFArray::from_CFTypes(&id_data_slice);
 
         let class_key = CFString::wrap_under_get_rule(kSecClass);
@@ -108,9 +121,19 @@ fn get_cert_bytes(id: &[u8]) -> Option<Vec<u8>> {
             return None;
         }
         let certificate: SecCertificateRef = certificate as SecCertificateRef;
-        let bytes = CFData::wrap_under_get_rule(SecCertificateCopyData(certificate));
-        let bytes: Vec<u8> = bytes.bytes().to_vec();
-        Some(bytes)
+        let der = CFData::wrap_under_create_rule(SecCertificateCopyData(certificate));
+        let serial_number = CFData::wrap_under_create_rule(SecCertificateCopySerialNumberData(
+            certificate,
+            std::ptr::null_mut(),
+        ));
+        Some(Cert {
+            id: id.bytes().to_vec(),
+            label: hex::encode(Sha256::digest(id)).into_bytes(),
+            der: der.bytes().to_vec(),
+            issuer: Vec::new(),
+            serial_number: serial_number.bytes().to_vec(),
+            subject: Vec::new(),
+        })
     }
 }
 

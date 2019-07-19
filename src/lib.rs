@@ -288,59 +288,56 @@ extern "C" fn C_GetAttributeValue(
     for i in 0..ulCount {
         let mut attr = unsafe { &mut *pTemplate.offset(i as isize) };
         eprintln!("    {}", attr);
-        match attr.type_ {
-            CKA_TOKEN => {
-                if attr.pValue.is_null() {
-                    attr.ulValueLen = 1;
-                } else {
-                    unsafe {
-                        *(attr.pValue as *mut u8) = 1;
-                    }
+        if let Some(attr_value) = get_attribute_from_cert(&cert, attr.type_) {
+            eprintln!("    {:?}", attr_value);
+            if attr.pValue.is_null() {
+                attr.ulValueLen = attr_value.len() as CK_ULONG;
+            } else {
+                unsafe {
+                    let ptr: *mut u8 = attr.pValue as *mut u8;
+                    // TODO: length check attr_value
+                    std::ptr::copy_nonoverlapping(
+                        attr_value.as_ptr(),
+                        ptr,
+                        attr.ulValueLen as usize,
+                    );
                 }
             }
-            CKA_LABEL => {
-                let label = cert.label();
-                eprintln!("    {}", label);
-                if attr.pValue.is_null() {
-                    attr.ulValueLen = label.len() as CK_ULONG;
-                } else {
-                    unsafe {
-                        let ptr: *mut u8 = attr.pValue as *mut u8;
-                        std::ptr::copy_nonoverlapping(
-                            label.as_ptr(),
-                            ptr,
-                            attr.ulValueLen as usize,
-                        );
+        } else {
+            match attr.type_ {
+                CKA_TOKEN => {
+                    if attr.pValue.is_null() {
+                        attr.ulValueLen = 1;
+                    } else {
+                        unsafe {
+                            *(attr.pValue as *mut u8) = 1;
+                        }
                     }
                 }
-            }
-            CKA_VALUE => {
-                let cert_bytes = match cert.bytes() {
-                    Some(bytes) => bytes,
-                    None => Vec::new(),
-                };
-                if attr.pValue.is_null() {
-                    attr.ulValueLen = cert_bytes.len() as CK_ULONG;
-                } else {
-                    unsafe {
-                        let ptr: *mut u8 = attr.pValue as *mut u8;
-                        // TODO: err... check that we aren't copying more than cert_bytes actually has
-                        std::ptr::copy_nonoverlapping(
-                            cert_bytes.as_ptr(),
-                            ptr,
-                            attr.ulValueLen as usize,
-                        );
-                    }
+                _ => {
+                    attr.ulValueLen = (0 - 1) as CK_ULONG;
                 }
-            }
-            _ => {
-                attr.ulValueLen = (0 - 1) as CK_ULONG;
             }
         }
     }
     eprintln!("CKR_OK");
     CKR_OK
 }
+
+fn get_attribute_from_cert(
+    cert: &crate::macos_backend::Cert,
+    attribute: CK_ATTRIBUTE_TYPE,
+) -> Option<&[u8]> {
+    let result = match attribute {
+        CKA_VALUE => cert.value(),
+        CKA_ISSUER => cert.issuer(),
+        CKA_SERIAL_NUMBER => cert.serial_number(),
+        CKA_SUBJECT => cert.subject(),
+        _ => return None,
+    };
+    Some(result)
+}
+
 extern "C" fn C_SetAttributeValue(
     hSession: CK_SESSION_HANDLE,
     hObject: CK_OBJECT_HANDLE,

@@ -10,7 +10,7 @@ fn main() {
         .blacklist_type("^SecIdentity.*")
         .blacklist_type("^SecCertificate.*")
         .whitelist_function("SecItemCopyMatching")
-        .whitelist_function("SecCertificateCopyData")
+        .whitelist_function("SecCertificateCopy.*")
         .whitelist_function("SecCertificateGetTypeID")
         .whitelist_function("SecIdentityCopyCertificate")
         .whitelist_function("^SecKey.*")
