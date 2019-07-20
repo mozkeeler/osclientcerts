@@ -372,19 +372,40 @@ extern "C" fn C_FindObjectsInit(
     }
     let mut found_unknown_attribute = false;
     let mut class_type = None;
+    let mut issuer = None;
+    let mut serial_number = None;
     for i in 0..ulCount {
         let attr = unsafe { &*pTemplate.offset(i as isize) };
         eprintln!("    {}", attr);
         match attr.type_ {
             CKA_CLASS => class_type = attr.value_as_int(),
             CKA_TOKEN => {}
+            CKA_ISSUER => {
+                let slice = unsafe {
+                    std::slice::from_raw_parts(attr.pValue as *const u8, attr.ulValueLen as usize)
+                };
+                issuer = Some(slice.to_owned());
+            }
+            CKA_SERIAL_NUMBER => {
+                let slice = unsafe {
+                    std::slice::from_raw_parts(attr.pValue as *const u8, attr.ulValueLen as usize)
+                };
+                serial_number = Some(slice.to_owned());
+            }
             _ => found_unknown_attribute = true,
         };
     }
     match class_type {
         Some(class_type) if !found_unknown_attribute && class_type == CKO_CERTIFICATE => {
+            let mut attrs = Vec::new();
+            if let Some(issuer) = issuer.take() {
+                attrs.push((CKA_ISSUER, issuer));
+            }
+            if let Some(serial_number) = serial_number.take() {
+                attrs.push((CKA_SERIAL_NUMBER, serial_number));
+            }
             let mut manager = IMPL.lock().unwrap();
-            manager.find_certs(hSession, false);
+            manager.find_certs(hSession, &attrs, false);
         }
         _ => {}
     }
@@ -405,7 +426,7 @@ extern "C" fn C_FindObjects(
         return CKR_ARGUMENTS_BAD;
     }
     let mut manager = IMPL.lock().unwrap();
-    if let Some(handles) = manager.find_certs(hSession, true) {
+    if let Some(handles) = manager.find_certs(hSession, &[], true) {
         // TODO: not quite sure what the right semantics are re. if we have more handles than ulMaxObjectCount
         unsafe {
             *pulObjectCount = handles.len() as CK_ULONG;

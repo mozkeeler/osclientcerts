@@ -42,18 +42,22 @@ impl Manager {
     pub fn find_certs(
         &mut self,
         session: CK_SESSION_HANDLE,
+        attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)],
         expect_already_exists: bool,
     ) -> Option<&Vec<CK_OBJECT_HANDLE>> {
         if !self.searches.contains_key(&session) {
             if expect_already_exists {
                 return None;
             }
+            // TODO: so... we just keep making more certs here... should we have a Set that keeps track?
             let certs = list_certs();
             let mut handles = Vec::with_capacity(certs.len());
             for cert in certs {
-                let handle = self.get_next_handle();
-                self.certs.insert(handle, cert);
-                handles.push(handle);
+                if cert_matches_attrs(&cert, attrs) {
+                    let handle = self.get_next_handle();
+                    self.certs.insert(handle, cert);
+                    handles.push(handle);
+                }
             }
             self.searches.insert(session, handles);
         }
@@ -63,4 +67,28 @@ impl Manager {
     pub fn find_cert(&mut self, object_handle: CK_OBJECT_HANDLE) -> Option<&Cert> {
         self.certs.get(&object_handle)
     }
+}
+
+fn cert_matches_attrs(cert: &Cert, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
+    eprintln!("{}", attrs.len());
+    for (attr_type, attr_value) in attrs {
+        match *attr_type {
+            CKA_ISSUER => {
+                eprintln!("{:?}", attr_value);
+                eprintln!("{:?}", cert.issuer());
+                if attr_value.as_slice() != cert.issuer() {
+                    return false;
+                }
+            }
+            CKA_SERIAL_NUMBER => {
+                eprintln!("{:?}", attr_value);
+                eprintln!("{:?}", cert.serial_number());
+                if attr_value.as_slice() != cert.serial_number() {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
 }
