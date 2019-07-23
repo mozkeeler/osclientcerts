@@ -106,6 +106,9 @@ extern "C" fn C_GetTokenInfo(slotID: CK_SLOT_ID, pInfo: CK_TOKEN_INFO_PTR) -> CK
     token_info.label = *b"OS Client Cert Token\0\0\0\0\0\0\0\0\0\0\0\0";
     token_info.manufacturerID = *b"Mozilla Corporation\0\0\0\0\0\0\0\0\0\0\0\0\0";
     token_info.model = *b"libosclientcerts";
+    unsafe {
+        *pInfo = token_info;
+    }
     eprintln!("CKR_OK");
     CKR_OK
 }
