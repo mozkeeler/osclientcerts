@@ -104,6 +104,13 @@ fn cert_matches_attrs(cert: &Cert, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bo
                     return false;
                 }
             }
+            CKA_SUBJECT => {
+                eprintln!("{:?}", attr_value);
+                eprintln!("{:?}", cert.subject());
+                if attr_value.as_slice() != cert.subject() {
+                    return false;
+                }
+            }
             _ => return false,
         }
     }

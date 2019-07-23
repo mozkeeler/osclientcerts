@@ -372,40 +372,28 @@ extern "C" fn C_FindObjectsInit(
     }
     let mut found_unknown_attribute = false;
     let mut class_type = None;
-    let mut issuer = None;
-    let mut serial_number = None;
+    let mut known_attrs = Vec::new();
     for i in 0..ulCount {
         let attr = unsafe { &*pTemplate.offset(i as isize) };
         eprintln!("    {}", attr);
         match attr.type_ {
             CKA_CLASS => class_type = attr.value_as_int(),
             CKA_TOKEN => {}
-            CKA_ISSUER => {
+            CKA_ISSUER | CKA_SERIAL_NUMBER | CKA_SUBJECT => {
                 let slice = unsafe {
                     std::slice::from_raw_parts(attr.pValue as *const u8, attr.ulValueLen as usize)
                 };
-                issuer = Some(slice.to_owned());
-            }
-            CKA_SERIAL_NUMBER => {
-                let slice = unsafe {
-                    std::slice::from_raw_parts(attr.pValue as *const u8, attr.ulValueLen as usize)
-                };
-                serial_number = Some(slice.to_owned());
+                known_attrs.push((attr.type_, slice.to_owned()));
             }
             _ => found_unknown_attribute = true,
         };
     }
     let mut manager = IMPL.lock().unwrap();
+    // It's unclear we need to heed class_type? We'll be called once with CKO_CERTIFICATE and later
+    // with other values, but it just seems simpler to ignore it?
     match class_type {
-        Some(class_type) if !found_unknown_attribute && class_type == CKO_CERTIFICATE => {
-            let mut attrs = Vec::new();
-            if let Some(issuer) = issuer.take() {
-                attrs.push((CKA_ISSUER, issuer));
-            }
-            if let Some(serial_number) = serial_number.take() {
-                attrs.push((CKA_SERIAL_NUMBER, serial_number));
-            }
-            manager.find_certs(hSession, &attrs, false);
+        Some(CKO_CERTIFICATE) | Some(CKO_NSS_TRUST) if !found_unknown_attribute => {
+            manager.find_certs(hSession, &known_attrs, false);
         }
         _ => manager.start_empty_search(hSession),
     }
