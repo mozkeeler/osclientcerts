@@ -395,6 +395,7 @@ extern "C" fn C_FindObjectsInit(
             _ => found_unknown_attribute = true,
         };
     }
+    let mut manager = IMPL.lock().unwrap();
     match class_type {
         Some(class_type) if !found_unknown_attribute && class_type == CKO_CERTIFICATE => {
             let mut attrs = Vec::new();
@@ -404,10 +405,9 @@ extern "C" fn C_FindObjectsInit(
             if let Some(serial_number) = serial_number.take() {
                 attrs.push((CKA_SERIAL_NUMBER, serial_number));
             }
-            let mut manager = IMPL.lock().unwrap();
             manager.find_certs(hSession, &attrs, false);
         }
-        _ => {}
+        _ => manager.start_empty_search(hSession),
     }
     eprintln!("CKR_OK");
     CKR_OK
@@ -422,7 +422,7 @@ extern "C" fn C_FindObjects(
     eprint!("C_FindObjects: ");
     // TODO: check hSession valid, return results
     if phObject.is_null() || pulObjectCount.is_null() {
-        eprintln!("CKR_ARGUMENTS_BAD");
+        eprintln!("CKR_ARGUMENTS_BAD (phObject or pulObjectCount null");
         return CKR_ARGUMENTS_BAD;
     }
     let mut manager = IMPL.lock().unwrap();
@@ -444,7 +444,7 @@ extern "C" fn C_FindObjects(
         eprintln!("CKR_OK");
         CKR_OK
     } else {
-        eprintln!("CKR_ARGUMENTS_BAD");
+        eprintln!("CKR_ARGUMENTS_BAD (couldn't find search for session)");
         CKR_ARGUMENTS_BAD
     }
 }
@@ -452,6 +452,8 @@ extern "C" fn C_FindObjects(
 extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {
     eprint!("C_FindObjectsFinal: ");
     // TODO: check hSession valid
+    let mut manager = IMPL.lock().unwrap();
+    manager.clear_search(hSession); // TODO: return error if there was no search?
     eprintln!("CKR_OK");
     CKR_OK
 }
