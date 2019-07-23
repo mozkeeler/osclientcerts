@@ -278,7 +278,7 @@ extern "C" fn C_GetAttributeValue(
     }
     // TODO: check hSession
     let mut manager = IMPL.lock().unwrap();
-    let cert = if let Some(cert) = manager.find_cert(hSession) {
+    let cert = if let Some(cert) = manager.find_cert(hObject) {
         cert
     } else {
         eprintln!("CKR_ARGUMENTS_BAD");
@@ -288,7 +288,7 @@ extern "C" fn C_GetAttributeValue(
         let mut attr = unsafe { &mut *pTemplate.offset(i as isize) };
         eprintln!("    {}", attr);
         if let Some(attr_value) = get_attribute_from_cert(&cert, attr.type_) {
-            eprintln!("    {:?}", attr_value);
+            eprintln!("    got attribute of len {}", attr_value.len());
             if attr.pValue.is_null() {
                 attr.ulValueLen = attr_value.len() as CK_ULONG;
             } else {
@@ -434,6 +434,7 @@ extern "C" fn C_FindObjects(
         if !phObject.is_null() {
             for (index, handle) in handles.iter().enumerate() {
                 if index < ulMaxObjectCount as usize {
+                    eprintln!("returning handle {}", handle);
                     unsafe {
                         *(phObject.offset(index as isize)) = *handle;
                     }
