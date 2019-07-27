@@ -16,7 +16,7 @@ mod macos_backend;
 mod manager;
 mod types;
 
-use manager::{Cert, Manager};
+use manager::Manager;
 use types::*;
 
 use std::sync::Mutex;
@@ -281,16 +281,17 @@ extern "C" fn C_GetAttributeValue(
     }
     // TODO: check hSession
     let mut manager = IMPL.lock().unwrap();
-    let cert = if let Some(cert) = manager.find_cert(hObject) {
-        cert
-    } else {
-        eprintln!("CKR_ARGUMENTS_BAD");
-        return CKR_ARGUMENTS_BAD;
+    let object = match manager.get_object(hObject) {
+        Ok(object) => object,
+        Err(()) => {
+            eprintln!("CKR_ARGUMENTS_BAD");
+            return CKR_ARGUMENTS_BAD;
+        }
     };
     for i in 0..ulCount {
         let mut attr = unsafe { &mut *pTemplate.offset(i as isize) };
         eprintln!("    {}", attr);
-        if let Some(attr_value) = get_attribute_from_cert(&cert, attr.type_) {
+        if let Some(attr_value) = object.get_attribute(attr.type_) {
             eprintln!("    got attribute of len {}", attr_value.len());
             if attr.pValue.is_null() {
                 attr.ulValueLen = attr_value.len() as CK_ULONG;
@@ -306,6 +307,7 @@ extern "C" fn C_GetAttributeValue(
                 }
             }
         } else {
+            // TODO: this is a bit silly - just pass it through to Object
             match attr.type_ {
                 CKA_TOKEN => {
                     if attr.pValue.is_null() {
@@ -340,18 +342,6 @@ extern "C" fn C_GetAttributeValue(
     CKR_OK
 }
 
-fn get_attribute_from_cert(cert: &Cert, attribute: CK_ATTRIBUTE_TYPE) -> Option<&[u8]> {
-    let result = match attribute {
-        CKA_LABEL => cert.label(),
-        CKA_VALUE => cert.value(),
-        CKA_ISSUER => cert.issuer(),
-        CKA_SERIAL_NUMBER => cert.serial_number(),
-        CKA_SUBJECT => cert.subject(),
-        _ => return None,
-    };
-    Some(result)
-}
-
 extern "C" fn C_SetAttributeValue(
     hSession: CK_SESSION_HANDLE,
     hObject: CK_OBJECT_HANDLE,
@@ -373,32 +363,22 @@ extern "C" fn C_FindObjectsInit(
         eprintln!("CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let mut found_unknown_attribute = false;
-    let mut class_type = None;
-    let mut known_attrs = Vec::new();
+    let mut attrs = Vec::new();
     for i in 0..ulCount {
         let attr = unsafe { &*pTemplate.offset(i as isize) };
         eprintln!("    {}", attr);
-        match attr.type_ {
-            CKA_CLASS => class_type = attr.value_as_int(),
-            CKA_TOKEN => {}
-            CKA_ISSUER | CKA_SERIAL_NUMBER | CKA_SUBJECT => {
-                let slice = unsafe {
-                    std::slice::from_raw_parts(attr.pValue as *const u8, attr.ulValueLen as usize)
-                };
-                known_attrs.push((attr.type_, slice.to_owned()));
-            }
-            _ => found_unknown_attribute = true,
+        let slice = unsafe {
+            std::slice::from_raw_parts(attr.pValue as *const u8, attr.ulValueLen as usize)
         };
+        attrs.push((attr.type_, slice.to_owned()));
     }
     let mut manager = IMPL.lock().unwrap();
-    // It's unclear we need to heed class_type? We'll be called once with CKO_CERTIFICATE and later
-    // with other values, but it just seems simpler to ignore it?
-    match class_type {
-        Some(CKO_CERTIFICATE) | Some(CKO_NSS_TRUST) if !found_unknown_attribute => {
-            manager.find_certs(hSession, &known_attrs, false);
+    match manager.start_search(hSession, &attrs) {
+        Ok(()) => {}
+        Err(()) => {
+            eprintln!("CKR_ARGUMENTS_BAD");
+            return CKR_ARGUMENTS_BAD;
         }
-        _ => manager.start_empty_search(hSession),
     }
     eprintln!("CKR_OK");
     CKR_OK
@@ -416,28 +396,28 @@ extern "C" fn C_FindObjects(
         eprintln!("CKR_ARGUMENTS_BAD (phObject or pulObjectCount null");
         return CKR_ARGUMENTS_BAD;
     }
-    let mut manager = IMPL.lock().unwrap();
-    if let Some(handles) = manager.find_certs(hSession, &[], true) {
-        // TODO: not quite sure what the right semantics are re. if we have more handles than ulMaxObjectCount
-        unsafe {
-            *pulObjectCount = handles.len() as CK_ULONG;
+    let manager = IMPL.lock().unwrap();
+    let handles = match manager.search(hSession) {
+        Ok(handles) => handles,
+        Err(()) => {
+            eprintln!("CKR_ARGUMENTS_BAD (couldn't find search for session)");
+            return CKR_ARGUMENTS_BAD;
         }
-        if !phObject.is_null() {
-            for (index, handle) in handles.iter().enumerate() {
-                if index < ulMaxObjectCount as usize {
-                    eprintln!("returning handle {}", handle);
-                    unsafe {
-                        *(phObject.offset(index as isize)) = *handle;
-                    }
-                }
+    };
+    // TODO: not quite sure what the right semantics are re. if we have more handles than ulMaxObjectCount
+    unsafe {
+        *pulObjectCount = handles.len() as CK_ULONG;
+    }
+    for (index, handle) in handles.iter().enumerate() {
+        if index < ulMaxObjectCount as usize {
+            eprintln!("returning handle {}", handle);
+            unsafe {
+                *(phObject.offset(index as isize)) = *handle;
             }
         }
-        eprintln!("CKR_OK");
-        CKR_OK
-    } else {
-        eprintln!("CKR_ARGUMENTS_BAD (couldn't find search for session)");
-        CKR_ARGUMENTS_BAD
     }
+    eprintln!("CKR_OK");
+    CKR_OK
 }
 
 extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {

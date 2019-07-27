@@ -16,6 +16,8 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use std::os::raw::c_void;
 
+use crate::types::*;
+
 #[repr(C)]
 pub struct __SecIdentity(c_void);
 pub type SecIdentityRef = *const __SecIdentity;
@@ -61,18 +63,103 @@ impl Cert {
     pub fn subject(&self) -> &[u8] {
         &self.subject
     }
+
+    pub fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
+        eprintln!("Cert.matches");
+        for (attr_type, attr_value) in attrs {
+            match *attr_type {
+                CKA_CLASS => {
+                    // TODO: ughhh we need to convert to an integer I guess? (write a helper)
+                }
+                CKA_TOKEN => {} // TODO: do we need to do anything here?
+                CKA_ISSUER => {
+                    eprintln!("{:?}", attr_value);
+                    eprintln!("{:?}", self.issuer());
+                    if attr_value.as_slice() != self.issuer() {
+                        return false;
+                    }
+                }
+                CKA_SERIAL_NUMBER => {
+                    eprintln!("{:?}", attr_value);
+                    eprintln!("{:?}", self.serial_number());
+                    if attr_value.as_slice() != self.serial_number() {
+                        return false;
+                    }
+                }
+                CKA_SUBJECT => {
+                    eprintln!("{:?}", attr_value);
+                    eprintln!("{:?}", self.subject());
+                    if attr_value.as_slice() != self.subject() {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        }
+        true
+    }
+
+    fn get_attribute(&self, attribute: CK_ATTRIBUTE_TYPE) -> Option<&[u8]> {
+        let result = match attribute {
+            CKA_LABEL => self.label(),
+            CKA_VALUE => self.value(),
+            CKA_ISSUER => self.issuer(),
+            CKA_SERIAL_NUMBER => self.serial_number(),
+            CKA_SUBJECT => self.subject(),
+            _ => return None,
+        };
+        Some(result)
+    }
 }
 
-pub fn list_certs() -> Vec<Cert> {
-    let mut certs = Vec::new();
+pub struct Key {
+    id: Vec<u8>,
+}
+
+impl Key {
+    fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
+        false
+    }
+
+    fn get_attribute(&self, attribute: CK_ATTRIBUTE_TYPE) -> Option<&[u8]> {
+        None
+    }
+}
+
+pub enum Object {
+    Cert(Cert),
+    Key(Key),
+}
+
+impl Object {
+    pub fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
+        match self {
+            Object::Cert(cert) => cert.matches(attrs),
+            Object::Key(key) => key.matches(attrs),
+        }
+    }
+
+    pub fn get_attribute(&self, attribute: CK_ATTRIBUTE_TYPE) -> Option<&[u8]> {
+        match self {
+            Object::Cert(cert) => cert.get_attribute(attribute),
+            Object::Key(key) => key.get_attribute(attribute),
+        }
+    }
+}
+
+pub fn list_objects() -> Vec<Object> {
+    let mut objects = Vec::new();
     if let Some(identities) = list_identities_as_persistent_refs() {
         for identity in identities.iter() {
             if let Some(cert) = get_cert_helper(&identity) {
-                certs.push(cert);
+                objects.push(Object::Cert(cert));
+            }
+            if let Some(key) = get_key_helper(&identity) {
+                objects.push(Object::Key(key));
             }
         }
     }
-    certs
+    objects
 }
 
 fn get_cert_helper(id: &CFData) -> Option<Cert> {
@@ -140,6 +227,12 @@ fn get_cert_helper(id: &CFData) -> Option<Cert> {
             subject: subject.bytes().to_vec(),
         })
     }
+}
+
+fn get_key_helper(id: &CFData) -> Option<Key> {
+    Some(Key {
+        id: id.bytes().to_vec(),
+    })
 }
 
 // Attempt to list all known `SecIdentity`s as persistent identifiers that we
