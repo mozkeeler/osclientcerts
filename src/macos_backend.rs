@@ -14,6 +14,7 @@ use core_foundation::string::*;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
+use byteorder::{ByteOrder, NativeEndian};
 use std::os::raw::c_void;
 
 use crate::types::*;
@@ -65,11 +66,15 @@ impl Cert {
     }
 
     pub fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
-        eprintln!("Cert.matches");
         for (attr_type, attr_value) in attrs {
             match *attr_type {
                 CKA_CLASS => {
-                    // TODO: ughhh we need to convert to an integer I guess? (write a helper)
+                    if attr_value.len() > 8 || attr_value.len() < 1 {
+                        return false;
+                    }
+                    if NativeEndian::read_uint(&attr_value, attr_value.len()) != CKO_CERTIFICATE {
+                        return false;
+                    }
                 }
                 CKA_TOKEN => {} // TODO: do we need to do anything here?
                 CKA_ISSUER => {
@@ -118,7 +123,21 @@ pub struct Key {
 
 impl Key {
     fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
-        false
+        for (attr_type, attr_value) in attrs {
+            match *attr_type {
+                CKA_CLASS => {
+                    if attr_value.len() > 8 || attr_value.len() < 1 {
+                        return false;
+                    }
+                    if NativeEndian::read_uint(&attr_value, attr_value.len()) != CKO_PRIVATE_KEY {
+                        return false;
+                    }
+                }
+                CKA_TOKEN => {} // TODO: do we need to do anything here?
+                _ => return false,
+            }
+        }
+        true
     }
 
     fn get_attribute(&self, attribute: CK_ATTRIBUTE_TYPE) -> Option<&[u8]> {

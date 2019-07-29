@@ -6,6 +6,7 @@
 #[link(name = "Security", kind = "framework")]
 extern "C" {}
 
+extern crate byteorder;
 #[macro_use]
 extern crate core_foundation;
 #[macro_use]

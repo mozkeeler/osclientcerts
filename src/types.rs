@@ -124,6 +124,12 @@ impl fmt::Display for CK_ATTRIBUTE {
             CKA_CLASS => "CKA_CLASS".to_owned(),
             CKA_TOKEN => "CKA_TOKEN".to_owned(),
             CKA_LABEL => "CKA_LABEL".to_owned(),
+            CKA_VALUE => "CKA_VALUE".to_owned(),
+            CKA_CERTIFICATE_TYPE => "CKA_CERTIFICATE_TYPE".to_owned(),
+            CKA_ISSUER => "CKA_ISSUER".to_owned(),
+            CKA_SERIAL_NUMBER => "CKA_SERIAL_NUMBER".to_owned(),
+            CKA_SUBJECT => "CKA_SUBJECT".to_owned(),
+            CKA_ID => "CKA_ID".to_owned(),
             _ => format!("{:?}", self.type_),
         };
         // TODO: this isn't quite what we want to do...
