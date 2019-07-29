@@ -96,6 +96,7 @@ pub type CK_OBJECT_HANDLE = CK_ULONG;
 pub type CK_OBJECT_HANDLE_PTR = *mut CK_OBJECT_HANDLE;
 pub type CK_ATTRIBUTE_TYPE = CK_ULONG;
 pub type CK_OBJECT_CLASS = CK_ULONG;
+pub type CK_KEY_TYPE = CK_ULONG;
 #[repr(C)]
 #[derive(Debug, Copy)]
 pub struct CK_ATTRIBUTE {
@@ -123,11 +124,13 @@ impl fmt::Display for CK_ATTRIBUTE {
         let type_ = match self.type_ {
             CKA_CLASS => "CKA_CLASS".to_owned(),
             CKA_TOKEN => "CKA_TOKEN".to_owned(),
+            CKA_PRIVATE => "CKA_PRIVATE".to_owned(),
             CKA_LABEL => "CKA_LABEL".to_owned(),
             CKA_VALUE => "CKA_VALUE".to_owned(),
             CKA_CERTIFICATE_TYPE => "CKA_CERTIFICATE_TYPE".to_owned(),
             CKA_ISSUER => "CKA_ISSUER".to_owned(),
             CKA_SERIAL_NUMBER => "CKA_SERIAL_NUMBER".to_owned(),
+            CKA_KEY_TYPE => "CKA_KEY_TYPE".to_owned(),
             CKA_SUBJECT => "CKA_SUBJECT".to_owned(),
             CKA_ID => "CKA_ID".to_owned(),
             _ => format!("{:?}", self.type_),
@@ -751,11 +754,13 @@ pub const CKF_TOKEN_PRESENT: CK_FLAGS = 1;
 
 pub const CKA_CLASS: CK_ATTRIBUTE_TYPE = 0;
 pub const CKA_TOKEN: CK_ATTRIBUTE_TYPE = 1;
+pub const CKA_PRIVATE: CK_ATTRIBUTE_TYPE = 2;
 pub const CKA_LABEL: CK_ATTRIBUTE_TYPE = 3;
 pub const CKA_VALUE: CK_ATTRIBUTE_TYPE = 17;
 pub const CKA_CERTIFICATE_TYPE: CK_ATTRIBUTE_TYPE = 128;
 pub const CKA_ISSUER: CK_ATTRIBUTE_TYPE = 129;
 pub const CKA_SERIAL_NUMBER: CK_ATTRIBUTE_TYPE = 130;
+pub const CKA_KEY_TYPE: CK_ATTRIBUTE_TYPE = 256;
 pub const CKA_SUBJECT: CK_ATTRIBUTE_TYPE = 257;
 pub const CKA_ID: CK_ATTRIBUTE_TYPE = 258;
 
@@ -764,3 +769,6 @@ pub const CKO_NSS_TRUST: CK_OBJECT_CLASS = CKO_NSS + 3;
 
 pub const CKO_CERTIFICATE: CK_OBJECT_CLASS = 1;
 pub const CKO_PRIVATE_KEY: CK_OBJECT_CLASS = 3;
+
+pub const CKK_RSA: CK_KEY_TYPE = 0;
+pub const CKK_EC: CK_KEY_TYPE = 3;

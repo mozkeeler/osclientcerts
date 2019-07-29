@@ -9,6 +9,8 @@ fn main() {
         .blacklist_type("^CF.*Ref")
         .blacklist_type("^SecIdentity.*")
         .blacklist_type("^SecCertificate.*")
+        .blacklist_type("^SecKey")
+        .blacklist_type("^SecKeyRef")
         .whitelist_function("SecItemCopyMatching")
         .whitelist_function("SecCertificateCopy.*")
         .whitelist_function("SecCertificateGetTypeID")

@@ -14,7 +14,7 @@ use core_foundation::string::*;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-use byteorder::{ByteOrder, NativeEndian};
+use byteorder::{ByteOrder, NativeEndian, WriteBytesExt};
 use std::os::raw::c_void;
 
 use crate::types::*;
@@ -30,6 +30,12 @@ pub struct __SecCertificate(c_void);
 pub type SecCertificateRef = *const __SecCertificate;
 declare_TCFType!(SecCertificate, SecCertificateRef);
 impl_TCFType!(SecCertificate, SecCertificateRef, SecCertificateGetTypeID);
+
+#[repr(C)]
+pub struct __SecKey(c_void);
+pub type SecKeyRef = *const __SecKey;
+declare_TCFType!(SecKey, SecKeyRef);
+impl_TCFType!(SecKey, SecKeyRef, SecKeyGetTypeID);
 
 // id is a persistent reference that refers to a SecIdentity that was retrieved
 // via kSecReturnPersistentRef. It can be used with SecItemCopyMatching with
@@ -119,6 +125,8 @@ impl Cert {
 
 pub struct Key {
     id: Vec<u8>,
+    private: Vec<u8>,
+    key_type: Vec<u8>,
 }
 
 impl Key {
@@ -141,7 +149,20 @@ impl Key {
     }
 
     fn get_attribute(&self, attribute: CK_ATTRIBUTE_TYPE) -> Option<&[u8]> {
-        None
+        let result = match attribute {
+            CKA_PRIVATE => self.private(),
+            CKA_KEY_TYPE => self.key_type(),
+            _ => return None,
+        };
+        Some(result)
+    }
+
+    fn key_type(&self) -> &[u8] {
+        &self.key_type
+    }
+
+    fn private(&self) -> &[u8] {
+        &self.private
     }
 }
 
@@ -249,9 +270,89 @@ fn get_cert_helper(id: &CFData) -> Option<Cert> {
 }
 
 fn get_key_helper(id: &CFData) -> Option<Key> {
-    Some(Key {
-        id: id.bytes().to_vec(),
-    })
+    unsafe {
+        // TODO: refactor common code
+        let status = SecKeychainUnlock(std::ptr::null_mut(), 0, std::ptr::null(), 0);
+        if status != errSecSuccess {
+            eprintln!("SecKeychainUnlock failed: {}", status);
+            return None;
+        }
+        let id_data_slice = [id.as_CFType()];
+        let ids = CFArray::from_CFTypes(&id_data_slice);
+
+        let class_key = CFString::wrap_under_get_rule(kSecClass);
+        let class_value = CFString::wrap_under_get_rule(kSecClassIdentity);
+        let match_key = CFString::wrap_under_get_rule(kSecMatchItemList);
+        let match_value = ids;
+        let return_ref_key = CFString::wrap_under_get_rule(kSecReturnRef);
+        let return_ref_value = CFBoolean::wrap_under_get_rule(kCFBooleanTrue);
+        let vals = vec![
+            (class_key.as_CFType(), class_value.as_CFType()),
+            (match_key.as_CFType(), match_value.as_CFType()),
+            (return_ref_key.as_CFType(), return_ref_value.as_CFType()),
+        ];
+        let dict = CFDictionary::from_CFType_pairs(&vals);
+        let mut identity = std::ptr::null();
+        let status = SecItemCopyMatching(dict.as_CFTypeRef() as CFDictionaryRef, &mut identity);
+        if status != errSecSuccess {
+            eprintln!("SecItemCopyMatching failed: {}", status);
+            return None;
+        }
+        if identity.is_null() {
+            eprintln!("couldn't get ref from id?");
+            return None;
+        }
+        let identity: SecIdentityRef = identity as SecIdentityRef;
+        let mut key = std::ptr::null();
+        // I think this is causing an auth prompt to come up. Can we use
+        // kSecReturnAttributes when we search instead? (but then we get
+        // attributes of the /identity/?
+        let status = SecIdentityCopyPrivateKey(identity, &mut key);
+        if status != errSecSuccess {
+            eprintln!("SecIdentityCopyPrivateKey failed: {}", status);
+            return None;
+        }
+        if key.is_null() {
+            eprintln!("couldn't get key from identity?");
+            return None;
+        }
+        let key: SecKeyRef = key as SecKeyRef;
+        // TODO: is SecKeyCopyAttributes fallible? will wrap_under_create_rule panic?
+        let attributes: CFDictionary<CFString, CFString> =
+            CFDictionary::wrap_under_create_rule(SecKeyCopyAttributes(key));
+        let key_type = match attributes.find(kSecAttrKeyType as *const _) {
+            Some(key_type) => key_type,
+            //Some(key_type) => TCFType::wrap_under_get_rule(*key_type as CFStringRef),
+            None => {
+                eprintln!("couldn't get kSecAttrKeyType?");
+                return None;
+            }
+        };
+        let key_type_value = if *key_type == CFString::wrap_under_get_rule(kSecAttrKeyTypeRSA) {
+            eprintln!("RSA key");
+            CKK_RSA
+        } else if *key_type == CFString::wrap_under_get_rule(kSecAttrKeyTypeECSECPrimeRandom) {
+            eprintln!("EC key");
+            CKK_EC
+        } else {
+            eprintln!("unsupported key type");
+            return None;
+        };
+        let key_type_size = std::mem::size_of::<CK_KEY_TYPE>();
+        let mut key_type_buf = Vec::with_capacity(key_type_size);
+        match key_type_buf.write_uint::<NativeEndian>(key_type_value, key_type_size) {
+            Ok(()) => {}
+            Err(e) => {
+                eprintln!("error serializing key type: {}", e);
+                return None;
+            }
+        };
+        Some(Key {
+            id: id.bytes().to_vec(),
+            private: vec![1],
+            key_type: key_type_buf,
+        })
+    }
 }
 
 // Attempt to list all known `SecIdentity`s as persistent identifiers that we
