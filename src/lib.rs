@@ -9,9 +9,10 @@ extern "C" {}
 extern crate byteorder;
 #[macro_use]
 extern crate core_foundation;
+extern crate hex;
 #[macro_use]
 extern crate lazy_static;
-extern crate hex;
+extern crate sha2;
 
 mod macos_backend;
 mod manager;
@@ -308,35 +309,7 @@ extern "C" fn C_GetAttributeValue(
                 }
             }
         } else {
-            // TODO: this is a bit silly - just pass it through to Object
-            match attr.type_ {
-                CKA_TOKEN => {
-                    if attr.pValue.is_null() {
-                        attr.ulValueLen = 1;
-                    } else {
-                        unsafe {
-                            *(attr.pValue as *mut u8) = 1;
-                        }
-                    }
-                }
-                CKA_ID => {
-                    if attr.pValue.is_null() {
-                        attr.ulValueLen = 2;
-                    } else {
-                        unsafe {
-                            let ptr: *mut u8 = attr.pValue as *mut u8;
-                            std::ptr::copy_nonoverlapping(
-                                "0".as_ptr(),
-                                ptr,
-                                attr.ulValueLen as usize,
-                            );
-                        }
-                    }
-                }
-                _ => {
-                    attr.ulValueLen = (0 - 1) as CK_ULONG;
-                }
-            }
+            attr.ulValueLen = (0 - 1) as CK_ULONG;
         }
     }
     eprintln!("CKR_OK");

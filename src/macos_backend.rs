@@ -14,7 +14,8 @@ use core_foundation::string::*;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-use byteorder::{ByteOrder, NativeEndian, WriteBytesExt};
+use byteorder::{NativeEndian, WriteBytesExt};
+use sha2::{Digest, Sha256};
 use std::os::raw::c_void;
 
 use crate::types::*;
@@ -42,69 +43,67 @@ impl_TCFType!(SecKey, SecKeyRef, SecKeyGetTypeID);
 // kSecItemMatchList to obtain a handle on the original SecIdentity.
 // https://developer.apple.com/documentation/security/keychain_services/keychain_items/item_return_result_keys
 pub struct Cert {
+    persistent_id: Vec<u8>,
+    class: Vec<u8>,
+    token: Vec<u8>,
     id: Vec<u8>,
     label: Vec<u8>,
-    der: Vec<u8>,
+    value: Vec<u8>,
     issuer: Vec<u8>,
     serial_number: Vec<u8>,
     subject: Vec<u8>,
 }
 
 impl Cert {
-    pub fn label(&self) -> &[u8] {
+    fn class(&self) -> &[u8] {
+        &self.class
+    }
+
+    fn token(&self) -> &[u8] {
+        &self.token
+    }
+
+    fn id(&self) -> &[u8] {
+        &self.id
+    }
+
+    fn label(&self) -> &[u8] {
         &self.label
     }
 
-    pub fn value(&self) -> &[u8] {
-        &self.der
+    fn value(&self) -> &[u8] {
+        &self.value
     }
 
-    pub fn issuer(&self) -> &[u8] {
+    fn issuer(&self) -> &[u8] {
         &self.issuer
     }
 
-    pub fn serial_number(&self) -> &[u8] {
+    fn serial_number(&self) -> &[u8] {
         &self.serial_number
     }
 
-    pub fn subject(&self) -> &[u8] {
+    fn subject(&self) -> &[u8] {
         &self.subject
     }
 
-    pub fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
+    fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
         for (attr_type, attr_value) in attrs {
-            match *attr_type {
-                CKA_CLASS => {
-                    if attr_value.len() > 8 || attr_value.len() < 1 {
-                        return false;
-                    }
-                    if NativeEndian::read_uint(&attr_value, attr_value.len()) != CKO_CERTIFICATE {
-                        return false;
-                    }
-                }
-                CKA_TOKEN => {} // TODO: do we need to do anything here?
-                CKA_ISSUER => {
-                    eprintln!("{:?}", attr_value);
-                    eprintln!("{:?}", self.issuer());
-                    if attr_value.as_slice() != self.issuer() {
-                        return false;
-                    }
-                }
-                CKA_SERIAL_NUMBER => {
-                    eprintln!("{:?}", attr_value);
-                    eprintln!("{:?}", self.serial_number());
-                    if attr_value.as_slice() != self.serial_number() {
-                        return false;
-                    }
-                }
-                CKA_SUBJECT => {
-                    eprintln!("{:?}", attr_value);
-                    eprintln!("{:?}", self.subject());
-                    if attr_value.as_slice() != self.subject() {
-                        return false;
-                    }
-                }
+            let comparison = match *attr_type {
+                CKA_CLASS => self.class(),
+                CKA_TOKEN => self.token(),
+                CKA_LABEL => self.label(),
+                CKA_ID => self.id(),
+                CKA_VALUE => self.value(),
+                CKA_ISSUER => self.issuer(),
+                CKA_SERIAL_NUMBER => self.serial_number(),
+                CKA_SUBJECT => self.subject(),
                 _ => return false,
+            };
+            eprintln!("{:?}", attr_value);
+            eprintln!("{:?}", comparison);
+            if attr_value.as_slice() != comparison {
+                return false;
             }
         }
         true
@@ -112,7 +111,10 @@ impl Cert {
 
     fn get_attribute(&self, attribute: CK_ATTRIBUTE_TYPE) -> Option<&[u8]> {
         let result = match attribute {
+            CKA_CLASS => self.class(),
+            CKA_TOKEN => self.token(),
             CKA_LABEL => self.label(),
+            CKA_ID => self.id(),
             CKA_VALUE => self.value(),
             CKA_ISSUER => self.issuer(),
             CKA_SERIAL_NUMBER => self.serial_number(),
@@ -124,25 +126,49 @@ impl Cert {
 }
 
 pub struct Key {
+    persistent_id: Vec<u8>,
+    class: Vec<u8>,
+    token: Vec<u8>,
     id: Vec<u8>,
     private: Vec<u8>,
     key_type: Vec<u8>,
 }
 
 impl Key {
+    fn class(&self) -> &[u8] {
+        &self.class
+    }
+
+    fn token(&self) -> &[u8] {
+        &self.token
+    }
+
+    fn id(&self) -> &[u8] {
+        &self.id
+    }
+
+    fn private(&self) -> &[u8] {
+        &self.private
+    }
+
+    fn key_type(&self) -> &[u8] {
+        &self.key_type
+    }
+
     fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
         for (attr_type, attr_value) in attrs {
-            match *attr_type {
-                CKA_CLASS => {
-                    if attr_value.len() > 8 || attr_value.len() < 1 {
-                        return false;
-                    }
-                    if NativeEndian::read_uint(&attr_value, attr_value.len()) != CKO_PRIVATE_KEY {
-                        return false;
-                    }
-                }
-                CKA_TOKEN => {} // TODO: do we need to do anything here?
+            let comparison = match *attr_type {
+                CKA_CLASS => self.class(),
+                CKA_TOKEN => self.token(),
+                CKA_ID => self.id(),
+                CKA_PRIVATE => self.private(),
+                CKA_KEY_TYPE => self.key_type(),
                 _ => return false,
+            };
+            eprintln!("{:?}", attr_value);
+            eprintln!("{:?}", comparison);
+            if attr_value.as_slice() != comparison {
+                return false;
             }
         }
         true
@@ -150,19 +176,14 @@ impl Key {
 
     fn get_attribute(&self, attribute: CK_ATTRIBUTE_TYPE) -> Option<&[u8]> {
         let result = match attribute {
+            CKA_CLASS => self.class(),
+            CKA_TOKEN => self.token(),
+            CKA_ID => self.id(),
             CKA_PRIVATE => self.private(),
             CKA_KEY_TYPE => self.key_type(),
             _ => return None,
         };
         Some(result)
-    }
-
-    fn key_type(&self) -> &[u8] {
-        &self.key_type
-    }
-
-    fn private(&self) -> &[u8] {
-        &self.private
     }
 }
 
@@ -200,6 +221,15 @@ pub fn list_objects() -> Vec<Object> {
         }
     }
     objects
+}
+
+fn serialize_uint<T: Into<u64>>(value: T) -> Vec<u8> {
+    let value_size = std::mem::size_of::<T>();
+    let mut value_buf = Vec::with_capacity(value_size);
+    match value_buf.write_uint::<NativeEndian>(value.into(), value_size) {
+        Ok(()) => value_buf,
+        Err(e) => panic!("error serializing value: {}", e),
+    }
 }
 
 fn get_cert_helper(id: &CFData) -> Option<Cert> {
@@ -257,15 +287,31 @@ fn get_cert_helper(id: &CFData) -> Option<Cert> {
         let subject = CFData::wrap_under_create_rule(SecCertificateCopyNormalizedSubjectSequence(
             certificate,
         ));
+        let persistent_id = id.bytes().to_vec();
+        let id = hex::encode(Sha256::digest(&persistent_id));
 
         Some(Cert {
-            id: id.bytes().to_vec(),
+            persistent_id,
+            class: serialize_uint(CKO_CERTIFICATE),
+            token: serialize_uint(CK_TRUE),
+            id: id.into_bytes(),
             label: label.to_string().into_bytes(),
-            der: der.bytes().to_vec(),
+            value: der.bytes().to_vec(),
             issuer: issuer.bytes().to_vec(),
             serial_number: serial_number.bytes().to_vec(),
             subject: subject.bytes().to_vec(),
         })
+    }
+}
+
+fn get_key_attribute<T: TCFType + Clone>(key: &SecKeyRef, attr: CFStringRef) -> Option<T> {
+    // TODO: is SecKeyCopyAttributes fallible? will wrap_under_create_rule panic?
+    let attributes: CFDictionary<CFString, T> =
+        unsafe { CFDictionary::wrap_under_create_rule(SecKeyCopyAttributes(*key)) };
+    // errr... so what's the lifetime of this?
+    match attributes.find(attr as *const _) {
+        Some(value) => Some((*value).clone()),
+        None => None,
     }
 }
 
@@ -303,54 +349,48 @@ fn get_key_helper(id: &CFData) -> Option<Key> {
             return None;
         }
         let identity: SecIdentityRef = identity as SecIdentityRef;
-        let mut key = std::ptr::null();
-        // I think this is causing an auth prompt to come up. Can we use
-        // kSecReturnAttributes when we search instead? (but then we get
-        // attributes of the /identity/?
-        let status = SecIdentityCopyPrivateKey(identity, &mut key);
+        let mut certificate = std::ptr::null();
+        let status = SecIdentityCopyCertificate(identity, &mut certificate);
         if status != errSecSuccess {
-            eprintln!("SecIdentityCopyPrivateKey failed: {}", status);
+            eprintln!("SecIdentityCopyCertificate failed: {}", status);
             return None;
         }
+        if certificate.is_null() {
+            eprintln!("couldn't get certificate from identity?");
+            return None;
+        }
+        let certificate: SecCertificateRef = certificate as SecCertificateRef;
+        let key = SecCertificateCopyKey(certificate);
         if key.is_null() {
-            eprintln!("couldn't get key from identity?");
+            eprintln!("couldn't get key from certificate?");
             return None;
         }
         let key: SecKeyRef = key as SecKeyRef;
-        // TODO: is SecKeyCopyAttributes fallible? will wrap_under_create_rule panic?
-        let attributes: CFDictionary<CFString, CFString> =
-            CFDictionary::wrap_under_create_rule(SecKeyCopyAttributes(key));
-        let key_type = match attributes.find(kSecAttrKeyType as *const _) {
+        let key_type: CFString = match get_key_attribute(&key, kSecAttrKeyType) {
             Some(key_type) => key_type,
-            //Some(key_type) => TCFType::wrap_under_get_rule(*key_type as CFStringRef),
             None => {
                 eprintln!("couldn't get kSecAttrKeyType?");
                 return None;
             }
         };
-        let key_type_value = if *key_type == CFString::wrap_under_get_rule(kSecAttrKeyTypeRSA) {
-            eprintln!("RSA key");
+        let key_type_value = if key_type == CFString::wrap_under_get_rule(kSecAttrKeyTypeRSA) {
             CKK_RSA
-        } else if *key_type == CFString::wrap_under_get_rule(kSecAttrKeyTypeECSECPrimeRandom) {
-            eprintln!("EC key");
+        } else if key_type == CFString::wrap_under_get_rule(kSecAttrKeyTypeECSECPrimeRandom) {
             CKK_EC
         } else {
             eprintln!("unsupported key type");
             return None;
         };
-        let key_type_size = std::mem::size_of::<CK_KEY_TYPE>();
-        let mut key_type_buf = Vec::with_capacity(key_type_size);
-        match key_type_buf.write_uint::<NativeEndian>(key_type_value, key_type_size) {
-            Ok(()) => {}
-            Err(e) => {
-                eprintln!("error serializing key type: {}", e);
-                return None;
-            }
-        };
+        let persistent_id = id.bytes().to_vec();
+        let id = hex::encode(Sha256::digest(&persistent_id));
+
         Some(Key {
-            id: id.bytes().to_vec(),
-            private: vec![1],
-            key_type: key_type_buf,
+            persistent_id,
+            class: serialize_uint(CKO_PRIVATE_KEY),
+            token: serialize_uint(CK_TRUE),
+            id: id.into_bytes(),
+            private: serialize_uint(CK_TRUE),
+            key_type: serialize_uint(key_type_value),
         })
     }
 }
