@@ -134,6 +134,7 @@ impl fmt::Display for CK_ATTRIBUTE {
             CKA_SUBJECT => "CKA_SUBJECT".to_owned(),
             CKA_ID => "CKA_ID".to_owned(),
             CKA_EC_PARAMS => "CKA_EC_PARAMS".to_owned(),
+            CKA_ALWAYS_AUTHENTICATE => "CKA_ALWAYS_AUTHENTICATE".to_owned(),
             _ => format!("{:?}", self.type_),
         };
         // TODO: this isn't quite what we want to do...
@@ -163,6 +164,19 @@ pub struct CK_MECHANISM {
 impl Clone for CK_MECHANISM {
     fn clone(&self) -> Self {
         *self
+    }
+}
+impl fmt::Display for CK_MECHANISM {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mechanism = match self.mechanism {
+            CKM_ECDSA => "CKM_ECDSA".to_owned(),
+            _ => format!("{}", self.mechanism),
+        };
+        write!(
+            f,
+            "CK_MECHANISM {{ mechanism: {}, value: {:?}, len: {:?} }}",
+            mechanism, self.pParameter, self.ulParameterLen
+        )
     }
 }
 pub type CK_MECHANISM_PTR = *mut CK_MECHANISM;
@@ -765,6 +779,7 @@ pub const CKA_KEY_TYPE: CK_ATTRIBUTE_TYPE = 256;
 pub const CKA_SUBJECT: CK_ATTRIBUTE_TYPE = 257;
 pub const CKA_ID: CK_ATTRIBUTE_TYPE = 258;
 pub const CKA_EC_PARAMS: CK_ATTRIBUTE_TYPE = 384;
+pub const CKA_ALWAYS_AUTHENTICATE: CK_ATTRIBUTE_TYPE = 514;
 
 pub const CKO_NSS: CK_OBJECT_CLASS = 0x80000000 | 0x4E534350;
 pub const CKO_NSS_TRUST: CK_OBJECT_CLASS = CKO_NSS + 3;
@@ -774,3 +789,5 @@ pub const CKO_PRIVATE_KEY: CK_OBJECT_CLASS = 3;
 
 pub const CKK_RSA: CK_KEY_TYPE = 0;
 pub const CKK_EC: CK_KEY_TYPE = 3;
+
+pub const CKM_ECDSA: CK_MECHANISM_TYPE = 4161;

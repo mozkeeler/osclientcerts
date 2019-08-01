@@ -193,6 +193,57 @@ impl Key {
         };
         Some(result)
     }
+
+    pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, ()> {
+        unsafe {
+            // TODO: refactor common code
+            let status = SecKeychainUnlock(std::ptr::null_mut(), 0, std::ptr::null(), 0);
+            if status != errSecSuccess {
+                eprintln!("SecKeychainUnlock failed: {}", status);
+                return Err(());
+            }
+            let id_data_slice = [CFData::from_buffer(&self.persistent_id).as_CFType()];
+            let ids = CFArray::from_CFTypes(&id_data_slice);
+
+            let class_key = CFString::wrap_under_get_rule(kSecClass);
+            let class_value = CFString::wrap_under_get_rule(kSecClassIdentity);
+            let match_key = CFString::wrap_under_get_rule(kSecMatchItemList);
+            let match_value = ids;
+            let return_ref_key = CFString::wrap_under_get_rule(kSecReturnRef);
+            let return_ref_value = CFBoolean::wrap_under_get_rule(kCFBooleanTrue);
+            let vals = vec![
+                (class_key.as_CFType(), class_value.as_CFType()),
+                (match_key.as_CFType(), match_value.as_CFType()),
+                (return_ref_key.as_CFType(), return_ref_value.as_CFType()),
+            ];
+            let dict = CFDictionary::from_CFType_pairs(&vals);
+            let mut identity = std::ptr::null();
+            let status = SecItemCopyMatching(dict.as_CFTypeRef() as CFDictionaryRef, &mut identity);
+            if status != errSecSuccess {
+                eprintln!("SecItemCopyMatching failed: {}", status);
+                return Err(());
+            }
+            if identity.is_null() {
+                eprintln!("couldn't get ref from id?");
+                return Err(());
+            }
+            let identity: SecIdentityRef = identity as SecIdentityRef;
+            let mut key = std::ptr::null();
+            let status = SecIdentityCopyPrivateKey(identity, &mut key);
+            if status != errSecSuccess {
+                eprintln!("SecItemCopyPrivateKey failed: {}", status);
+                return Err(());
+            }
+            let data = CFData::from_buffer(data);
+            let signature = CFData::wrap_under_create_rule(SecKeyCreateSignature(
+                key,
+                kSecKeyAlgorithmECDSASignatureRFC4754,
+                data.as_concrete_TypeRef(),
+                std::ptr::null_mut(),
+            ));
+            Ok((*signature).to_vec())
+        }
+    }
 }
 
 pub enum Object {
@@ -394,6 +445,8 @@ fn get_key_helper(id: &CFData) -> Option<Key> {
             // Assume all EC keys are secp256r1, secp384r1, or secp521r1. This
             // is wrong, but the API doesn't seem to give us a way to determine
             // which curve this key is on.
+            // This might not matter in practice, because it seems all NSS uses
+            // this for is to get the signature size.
             match key_size_in_bits.to_i64() {
                 Some(256) => ec_params.extend_from_slice(OID_BYTES_SECP256R1),
                 Some(384) => ec_params.extend_from_slice(OID_BYTES_SECP384R1),

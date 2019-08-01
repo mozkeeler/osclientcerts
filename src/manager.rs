@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub struct Manager {
     sessions: BTreeSet<CK_SESSION_HANDLE>,
     searches: BTreeMap<CK_SESSION_HANDLE, Vec<CK_OBJECT_HANDLE>>,
+    signs: BTreeMap<CK_SESSION_HANDLE, CK_OBJECT_HANDLE>,
     objects: BTreeMap<CK_OBJECT_HANDLE, Object>,
     next_session: CK_SESSION_HANDLE,
     next_handle: CK_OBJECT_HANDLE,
@@ -16,6 +17,7 @@ impl Manager {
         Manager {
             sessions: BTreeSet::new(),
             searches: BTreeMap::new(),
+            signs: BTreeMap::new(),
             objects: BTreeMap::new(),
             next_session: 1,
             next_handle: 1,
@@ -78,5 +80,35 @@ impl Manager {
             Some(object) => Ok(object),
             None => Err(()),
         }
+    }
+
+    pub fn start_sign(
+        &mut self,
+        session: CK_SESSION_HANDLE,
+        key_handle: CK_OBJECT_HANDLE,
+    ) -> Result<(), ()> {
+        // TODO: per the spec, can we have multiple signs for the same session
+        // but different keys?
+        if self.signs.contains_key(&session) {
+            return Err(());
+        }
+        let key = match self.objects.get(&key_handle) {
+            Some(Object::Key(key)) => key,
+            _ => return Err(()),
+        };
+        self.signs.insert(session, key_handle);
+        Ok(())
+    }
+
+    pub fn sign(&self, session: CK_SESSION_HANDLE, data: &[u8]) -> Result<Vec<u8>, ()> {
+        let key_handle = match self.signs.get(&session) {
+            Some(key_handle) => key_handle,
+            None => return Err(()),
+        };
+        let key = match self.objects.get(&key_handle) {
+            Some(Object::Key(key)) => key,
+            _ => return Err(()),
+        };
+        key.sign(data)
     }
 }

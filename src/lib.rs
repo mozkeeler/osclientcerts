@@ -332,7 +332,6 @@ extern "C" fn C_FindObjectsInit(
 ) -> CK_RV {
     eprint!("C_FindObjectsInit: ");
     eprintln!("");
-    // TODO: check hSession valid, insert new find
     if pTemplate.is_null() {
         eprintln!("CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
@@ -365,7 +364,6 @@ extern "C" fn C_FindObjects(
     pulObjectCount: CK_ULONG_PTR,
 ) -> CK_RV {
     eprint!("C_FindObjects: ");
-    // TODO: check hSession valid, return results
     if phObject.is_null() || pulObjectCount.is_null() {
         eprintln!("CKR_ARGUMENTS_BAD (phObject or pulObjectCount null");
         return CKR_ARGUMENTS_BAD;
@@ -396,7 +394,6 @@ extern "C" fn C_FindObjects(
 
 extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {
     eprint!("C_FindObjectsFinal: ");
-    // TODO: check hSession valid
     let mut manager = IMPL.lock().unwrap();
     manager.clear_search(hSession); // TODO: return error if there was no search?
     eprintln!("CKR_OK");
@@ -513,8 +510,25 @@ extern "C" fn C_SignInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    eprintln!("C_SignInit: CKR_FUNCTION_NOT_SUPPORTED");
-    CKR_FUNCTION_NOT_SUPPORTED
+    eprint!("C_SignInit:");
+    eprintln!("");
+    if pMechanism.is_null() {
+        eprintln!("CKR_ARGUMENTS_BAD");
+        return CKR_ARGUMENTS_BAD;
+    }
+    // For our purposes, pMechanism might not matter as long as we trust NSS to
+    // give us a key that does the thing it's wanting.
+    eprintln!("{}", unsafe { *pMechanism });
+    let mut manager = IMPL.lock().unwrap();
+    match manager.start_sign(hSession, hKey) {
+        Ok(()) => {}
+        Err(()) => {
+            eprintln!("CKR_GENERAL_ERROR");
+            return CKR_GENERAL_ERROR;
+        }
+    };
+    eprintln!("CKR_OK");
+    CKR_OK
 }
 extern "C" fn C_Sign(
     hSession: CK_SESSION_HANDLE,
@@ -523,8 +537,34 @@ extern "C" fn C_Sign(
     pSignature: CK_BYTE_PTR,
     pulSignatureLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_Sign: CKR_FUNCTION_NOT_SUPPORTED");
-    CKR_FUNCTION_NOT_SUPPORTED
+    eprintln!("C_Sign:");
+    // TODO: we seem to always pass in allocated memory - do we need to handle
+    // the case where we're called to see what the length will be first?
+    if pData.is_null() || pSignature.is_null() || pulSignatureLen.is_null() {
+        eprintln!("CKR_ARGUMENTS_BAD");
+        return CKR_ARGUMENTS_BAD;
+    }
+    let manager = IMPL.lock().unwrap();
+    let data = unsafe { std::slice::from_raw_parts(pData, ulDataLen as usize) };
+    match manager.sign(hSession, data) {
+        Ok(signature) => {
+            let signature_capacity = unsafe { *pulSignatureLen } as usize;
+            if signature_capacity < signature.len() {
+                eprintln!("CKR_ARGUMENTS_BAD");
+                return CKR_ARGUMENTS_BAD;
+            }
+            let ptr: *mut u8 = pSignature as *mut u8;
+            unsafe {
+                std::ptr::copy_nonoverlapping(signature.as_ptr(), ptr, signature.len());
+            }
+        }
+        Err(()) => {
+            eprintln!("CKR_GENERAL_ERROR");
+            return CKR_GENERAL_ERROR;
+        }
+    };
+    eprintln!("CKR_OK");
+    CKR_OK
 }
 extern "C" fn C_SignUpdate(
     hSession: CK_SESSION_HANDLE,
