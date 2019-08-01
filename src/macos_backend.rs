@@ -10,6 +10,7 @@ use core_foundation::boolean::*;
 use core_foundation::data::*;
 use core_foundation::dictionary::*;
 use core_foundation::error::*;
+use core_foundation::number::*;
 use core_foundation::string::*;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
@@ -132,6 +133,7 @@ pub struct Key {
     id: Vec<u8>,
     private: Vec<u8>,
     key_type: Vec<u8>,
+    ec_params: Vec<u8>,
 }
 
 impl Key {
@@ -155,6 +157,10 @@ impl Key {
         &self.key_type
     }
 
+    fn ec_params(&self) -> &[u8] {
+        &self.ec_params
+    }
+
     fn matches(&self, attrs: &[(CK_ATTRIBUTE_TYPE, Vec<u8>)]) -> bool {
         for (attr_type, attr_value) in attrs {
             let comparison = match *attr_type {
@@ -163,6 +169,7 @@ impl Key {
                 CKA_ID => self.id(),
                 CKA_PRIVATE => self.private(),
                 CKA_KEY_TYPE => self.key_type(),
+                CKA_EC_PARAMS => self.ec_params(),
                 _ => return false,
             };
             eprintln!("{:?}", attr_value);
@@ -181,6 +188,7 @@ impl Key {
             CKA_ID => self.id(),
             CKA_PRIVATE => self.private(),
             CKA_KEY_TYPE => self.key_type(),
+            CKA_EC_PARAMS => self.ec_params(),
             _ => return None,
         };
         Some(result)
@@ -308,7 +316,6 @@ fn get_key_attribute<T: TCFType + Clone>(key: &SecKeyRef, attr: CFStringRef) -> 
     // TODO: is SecKeyCopyAttributes fallible? will wrap_under_create_rule panic?
     let attributes: CFDictionary<CFString, T> =
         unsafe { CFDictionary::wrap_under_create_rule(SecKeyCopyAttributes(*key)) };
-    // errr... so what's the lifetime of this?
     match attributes.find(attr as *const _) {
         Some(value) => Some((*value).clone()),
         None => None,
@@ -373,9 +380,29 @@ fn get_key_helper(id: &CFData) -> Option<Key> {
                 return None;
             }
         };
+        let key_size_in_bits: CFNumber = match get_key_attribute(&key, kSecAttrKeySizeInBits) {
+            Some(key_size_in_bits) => key_size_in_bits,
+            None => {
+                eprintln!("couldn't get key size in bits");
+                return None;
+            }
+        };
+        let mut ec_params = Vec::new();
         let key_type_value = if key_type == CFString::wrap_under_get_rule(kSecAttrKeyTypeRSA) {
             CKK_RSA
         } else if key_type == CFString::wrap_under_get_rule(kSecAttrKeyTypeECSECPrimeRandom) {
+            // Assume all EC keys are secp256r1, secp384r1, or secp521r1. This
+            // is wrong, but the API doesn't seem to give us a way to determine
+            // which curve this key is on.
+            match key_size_in_bits.to_i64() {
+                Some(256) => ec_params.extend_from_slice(OID_BYTES_SECP256R1),
+                Some(384) => ec_params.extend_from_slice(OID_BYTES_SECP384R1),
+                Some(521) => ec_params.extend_from_slice(OID_BYTES_SECP521R1),
+                _ => {
+                    eprintln!("unsupported EC key");
+                    return None;
+                }
+            };
             CKK_EC
         } else {
             eprintln!("unsupported key type");
@@ -391,9 +418,14 @@ fn get_key_helper(id: &CFData) -> Option<Key> {
             id: id.into_bytes(),
             private: serialize_uint(CK_TRUE),
             key_type: serialize_uint(key_type_value),
+            ec_params,
         })
     }
 }
+
+const OID_BYTES_SECP256R1: &[u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
+const OID_BYTES_SECP384R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x22];
+const OID_BYTES_SECP521R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23];
 
 // Attempt to list all known `SecIdentity`s as persistent identifiers that we
 // can cache for use later.

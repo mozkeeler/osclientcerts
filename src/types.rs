@@ -133,6 +133,7 @@ impl fmt::Display for CK_ATTRIBUTE {
             CKA_KEY_TYPE => "CKA_KEY_TYPE".to_owned(),
             CKA_SUBJECT => "CKA_SUBJECT".to_owned(),
             CKA_ID => "CKA_ID".to_owned(),
+            CKA_EC_PARAMS => "CKA_EC_PARAMS".to_owned(),
             _ => format!("{:?}", self.type_),
         };
         // TODO: this isn't quite what we want to do...
@@ -763,6 +764,7 @@ pub const CKA_SERIAL_NUMBER: CK_ATTRIBUTE_TYPE = 130;
 pub const CKA_KEY_TYPE: CK_ATTRIBUTE_TYPE = 256;
 pub const CKA_SUBJECT: CK_ATTRIBUTE_TYPE = 257;
 pub const CKA_ID: CK_ATTRIBUTE_TYPE = 258;
+pub const CKA_EC_PARAMS: CK_ATTRIBUTE_TYPE = 384;
 
 pub const CKO_NSS: CK_OBJECT_CLASS = 0x80000000 | 0x4E534350;
 pub const CKO_NSS_TRUST: CK_OBJECT_CLASS = CKO_NSS + 3;
