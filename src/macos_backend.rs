@@ -197,11 +197,6 @@ impl Key {
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, ()> {
         unsafe {
             // TODO: refactor common code
-            let status = SecKeychainUnlock(std::ptr::null_mut(), 0, std::ptr::null(), 0);
-            if status != errSecSuccess {
-                eprintln!("SecKeychainUnlock failed: {}", status);
-                return Err(());
-            }
             let id_data_slice = [CFData::from_buffer(&self.persistent_id).as_CFType()];
             let ids = CFArray::from_CFTypes(&id_data_slice);
 
@@ -293,11 +288,6 @@ fn serialize_uint<T: Into<u64>>(value: T) -> Vec<u8> {
 
 fn get_cert_helper(id: &CFData) -> Option<Cert> {
     unsafe {
-        let status = SecKeychainUnlock(std::ptr::null_mut(), 0, std::ptr::null(), 0);
-        if status != errSecSuccess {
-            eprintln!("SecKeychainUnlock failed: {}", status);
-            return None;
-        }
         let id_data_slice = [id.as_CFType()];
         let ids = CFArray::from_CFTypes(&id_data_slice);
 
@@ -376,11 +366,6 @@ fn get_key_attribute<T: TCFType + Clone>(key: &SecKeyRef, attr: CFStringRef) -> 
 fn get_key_helper(id: &CFData) -> Option<Key> {
     unsafe {
         // TODO: refactor common code
-        let status = SecKeychainUnlock(std::ptr::null_mut(), 0, std::ptr::null(), 0);
-        if status != errSecSuccess {
-            eprintln!("SecKeychainUnlock failed: {}", status);
-            return None;
-        }
         let id_data_slice = [id.as_CFType()];
         let ids = CFArray::from_CFTypes(&id_data_slice);
 
@@ -484,11 +469,6 @@ const OID_BYTES_SECP521R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23];
 // can cache for use later.
 fn list_identities_as_persistent_refs() -> Option<CFArray<CFData>> {
     unsafe {
-        let status = SecKeychainUnlock(std::ptr::null_mut(), 0, std::ptr::null(), 0);
-        if status != errSecSuccess {
-            eprintln!("SecKeychainUnlock failed: {}", status);
-            return None;
-        }
         let class_key = CFString::wrap_under_get_rule(kSecClass);
         let class_value = CFString::wrap_under_get_rule(kSecClassIdentity);
         let return_ref_key = CFString::wrap_under_get_rule(kSecReturnPersistentRef);
