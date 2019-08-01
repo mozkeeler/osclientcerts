@@ -133,6 +133,7 @@ impl fmt::Display for CK_ATTRIBUTE {
             CKA_KEY_TYPE => "CKA_KEY_TYPE".to_owned(),
             CKA_SUBJECT => "CKA_SUBJECT".to_owned(),
             CKA_ID => "CKA_ID".to_owned(),
+            CKA_MODULUS => "CKA_MODULUS".to_owned(),
             CKA_EC_PARAMS => "CKA_EC_PARAMS".to_owned(),
             CKA_ALWAYS_AUTHENTICATE => "CKA_ALWAYS_AUTHENTICATE".to_owned(),
             _ => format!("{:?}", self.type_),
@@ -169,6 +170,7 @@ impl Clone for CK_MECHANISM {
 impl fmt::Display for CK_MECHANISM {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mechanism = match self.mechanism {
+            CKM_RSA_PKCS => "CKM_RSA_PKCS".to_owned(),
             CKM_ECDSA => "CKM_ECDSA".to_owned(),
             _ => format!("{}", self.mechanism),
         };
@@ -778,6 +780,7 @@ pub const CKA_SERIAL_NUMBER: CK_ATTRIBUTE_TYPE = 130;
 pub const CKA_KEY_TYPE: CK_ATTRIBUTE_TYPE = 256;
 pub const CKA_SUBJECT: CK_ATTRIBUTE_TYPE = 257;
 pub const CKA_ID: CK_ATTRIBUTE_TYPE = 258;
+pub const CKA_MODULUS: CK_ATTRIBUTE_TYPE = 288;
 pub const CKA_EC_PARAMS: CK_ATTRIBUTE_TYPE = 384;
 pub const CKA_ALWAYS_AUTHENTICATE: CK_ATTRIBUTE_TYPE = 514;
 
@@ -790,4 +793,5 @@ pub const CKO_PRIVATE_KEY: CK_OBJECT_CLASS = 3;
 pub const CKK_RSA: CK_KEY_TYPE = 0;
 pub const CKK_EC: CK_KEY_TYPE = 3;
 
+pub const CKM_RSA_PKCS: CK_MECHANISM_TYPE = 1;
 pub const CKM_ECDSA: CK_MECHANISM_TYPE = 4161;
