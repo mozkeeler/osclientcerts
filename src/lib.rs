@@ -9,10 +9,8 @@ extern "C" {}
 extern crate byteorder;
 #[macro_use]
 extern crate core_foundation;
-extern crate hex;
 #[macro_use]
 extern crate lazy_static;
-extern crate sha2;
 
 mod macos_backend;
 mod manager;
@@ -550,7 +548,11 @@ extern "C" fn C_Sign(
         Ok(signature) => {
             let signature_capacity = unsafe { *pulSignatureLen } as usize;
             if signature_capacity < signature.len() {
-                eprintln!("CKR_ARGUMENTS_BAD");
+                eprintln!(
+                    "CKR_ARGUMENTS_BAD capacity {} < signature {}",
+                    signature_capacity,
+                    signature.len()
+                );
                 return CKR_ARGUMENTS_BAD;
             }
             let ptr: *mut u8 = pSignature as *mut u8;

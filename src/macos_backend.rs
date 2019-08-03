@@ -16,7 +16,6 @@ use core_foundation::string::*;
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use byteorder::{NativeEndian, WriteBytesExt};
-use sha2::{Digest, Sha256};
 use std::os::raw::c_void;
 
 use crate::types::*;
@@ -26,6 +25,12 @@ pub struct __SecIdentity(c_void);
 pub type SecIdentityRef = *const __SecIdentity;
 declare_TCFType!(SecIdentity, SecIdentityRef);
 impl_TCFType!(SecIdentity, SecIdentityRef, SecIdentityGetTypeID);
+
+// The APIs we're using are thread-safe and we're serializing use of the
+// Manager, so this should be safe.
+pub struct SecIdentityHolder(SecIdentity);
+unsafe impl Send for SecIdentityHolder {}
+unsafe impl Sync for SecIdentityHolder {}
 
 #[repr(C)]
 pub struct __SecCertificate(c_void);
@@ -39,12 +44,7 @@ pub type SecKeyRef = *const __SecKey;
 declare_TCFType!(SecKey, SecKeyRef);
 impl_TCFType!(SecKey, SecKeyRef, SecKeyGetTypeID);
 
-// id is a persistent reference that refers to a SecIdentity that was retrieved
-// via kSecReturnPersistentRef. It can be used with SecItemCopyMatching with
-// kSecItemMatchList to obtain a handle on the original SecIdentity.
-// https://developer.apple.com/documentation/security/keychain_services/keychain_items/item_return_result_keys
 pub struct Cert {
-    persistent_id: Vec<u8>,
     class: Vec<u8>,
     token: Vec<u8>,
     id: Vec<u8>,
@@ -101,8 +101,6 @@ impl Cert {
                 CKA_SUBJECT => self.subject(),
                 _ => return false,
             };
-            eprintln!("{:?}", attr_value);
-            eprintln!("{:?}", comparison);
             if attr_value.as_slice() != comparison {
                 return false;
             }
@@ -127,7 +125,7 @@ impl Cert {
 }
 
 pub struct Key {
-    persistent_id: Vec<u8>,
+    identity: SecIdentityHolder,
     class: Vec<u8>,
     token: Vec<u8>,
     id: Vec<u8>,
@@ -172,8 +170,6 @@ impl Key {
                 CKA_EC_PARAMS => self.ec_params(),
                 _ => return false,
             };
-            eprintln!("{:?}", attr_value);
-            eprintln!("{:?}", comparison);
             if attr_value.as_slice() != comparison {
                 return false;
             }
@@ -196,46 +192,28 @@ impl Key {
 
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, ()> {
         unsafe {
-            // TODO: refactor common code
-            let id_data_slice = [CFData::from_buffer(&self.persistent_id).as_CFType()];
-            let ids = CFArray::from_CFTypes(&id_data_slice);
-
-            let class_key = CFString::wrap_under_get_rule(kSecClass);
-            let class_value = CFString::wrap_under_get_rule(kSecClassIdentity);
-            let match_key = CFString::wrap_under_get_rule(kSecMatchItemList);
-            let match_value = ids;
-            let return_ref_key = CFString::wrap_under_get_rule(kSecReturnRef);
-            let return_ref_value = CFBoolean::wrap_under_get_rule(kCFBooleanTrue);
-            let vals = vec![
-                (class_key.as_CFType(), class_value.as_CFType()),
-                (match_key.as_CFType(), match_value.as_CFType()),
-                (return_ref_key.as_CFType(), return_ref_value.as_CFType()),
-            ];
-            let dict = CFDictionary::from_CFType_pairs(&vals);
-            let mut identity = std::ptr::null();
-            let status = SecItemCopyMatching(dict.as_CFTypeRef() as CFDictionaryRef, &mut identity);
-            if status != errSecSuccess {
-                eprintln!("SecItemCopyMatching failed: {}", status);
-                return Err(());
-            }
-            if identity.is_null() {
-                eprintln!("couldn't get ref from id?");
-                return Err(());
-            }
-            let identity: SecIdentityRef = identity as SecIdentityRef;
             let mut key = std::ptr::null();
-            let status = SecIdentityCopyPrivateKey(identity, &mut key);
+            let status = SecIdentityCopyPrivateKey(self.identity.0.as_concrete_TypeRef(), &mut key);
             if status != errSecSuccess {
                 eprintln!("SecItemCopyPrivateKey failed: {}", status);
                 return Err(());
             }
+            let key = SecKey::wrap_under_create_rule(key);
             let data = CFData::from_buffer(data);
-            let signature = CFData::wrap_under_create_rule(SecKeyCreateSignature(
-                key,
-                kSecKeyAlgorithmECDSASignatureRFC4754,
+            let mut error = std::ptr::null_mut();
+            let result = SecKeyCreateSignature(
+                key.as_concrete_TypeRef(),
+                kSecKeyAlgorithmECDSASignatureDigestX962SHA256, // TODO uhhh
                 data.as_concrete_TypeRef(),
-                std::ptr::null_mut(),
-            ));
+                &mut error,
+            );
+            if result.is_null() {
+                eprintln!("SecKeyCreateSignature failed");
+                let error = CFError::wrap_under_create_rule(error);
+                error.show();
+                return Err(());
+            }
+            let signature = CFData::wrap_under_create_rule(result);
             Ok((*signature).to_vec())
         }
     }
@@ -264,14 +242,10 @@ impl Object {
 
 pub fn list_objects() -> Vec<Object> {
     let mut objects = Vec::new();
-    if let Some(identities) = list_identities_as_persistent_refs() {
-        for identity in identities.iter() {
-            if let Some(cert) = get_cert_helper(&identity) {
-                objects.push(Object::Cert(cert));
-            }
-            if let Some(key) = get_key_helper(&identity) {
-                objects.push(Object::Key(key));
-            }
+    if let Some(identities) = list_identities() {
+        for (cert, key) in identities {
+            objects.push(Object::Cert(cert));
+            objects.push(Object::Key(key));
         }
     }
     objects
@@ -286,36 +260,10 @@ fn serialize_uint<T: Into<u64>>(value: T) -> Vec<u8> {
     }
 }
 
-fn get_cert_helper(id: &CFData) -> Option<Cert> {
+fn identity_to_cert(identity: &SecIdentity, id: usize) -> Option<Cert> {
     unsafe {
-        let id_data_slice = [id.as_CFType()];
-        let ids = CFArray::from_CFTypes(&id_data_slice);
-
-        let class_key = CFString::wrap_under_get_rule(kSecClass);
-        let class_value = CFString::wrap_under_get_rule(kSecClassIdentity);
-        let match_key = CFString::wrap_under_get_rule(kSecMatchItemList);
-        let match_value = ids;
-        let return_ref_key = CFString::wrap_under_get_rule(kSecReturnRef);
-        let return_ref_value = CFBoolean::wrap_under_get_rule(kCFBooleanTrue);
-        let vals = vec![
-            (class_key.as_CFType(), class_value.as_CFType()),
-            (match_key.as_CFType(), match_value.as_CFType()),
-            (return_ref_key.as_CFType(), return_ref_value.as_CFType()),
-        ];
-        let dict = CFDictionary::from_CFType_pairs(&vals);
-        let mut identity = std::ptr::null();
-        let status = SecItemCopyMatching(dict.as_CFTypeRef() as CFDictionaryRef, &mut identity);
-        if status != errSecSuccess {
-            eprintln!("SecItemCopyMatching failed: {}", status);
-            return None;
-        }
-        if identity.is_null() {
-            eprintln!("couldn't get ref from id?");
-            return None;
-        }
-        let identity: SecIdentityRef = identity as SecIdentityRef;
         let mut certificate = std::ptr::null();
-        let status = SecIdentityCopyCertificate(identity, &mut certificate);
+        let status = SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate);
         if status != errSecSuccess {
             eprintln!("SecIdentityCopyCertificate failed: {}", status);
             return None;
@@ -324,26 +272,28 @@ fn get_cert_helper(id: &CFData) -> Option<Cert> {
             eprintln!("couldn't get certificate from identity?");
             return None;
         }
-        let certificate: SecCertificateRef = certificate as SecCertificateRef;
-        let label = CFString::wrap_under_create_rule(SecCertificateCopySubjectSummary(certificate));
-        let der = CFData::wrap_under_create_rule(SecCertificateCopyData(certificate));
-        let issuer =
-            CFData::wrap_under_create_rule(SecCertificateCopyNormalizedIssuerSequence(certificate));
+        let certificate = SecCertificate::wrap_under_create_rule(certificate);
+        let label = CFString::wrap_under_create_rule(SecCertificateCopySubjectSummary(
+            certificate.as_concrete_TypeRef(),
+        ));
+        let der = CFData::wrap_under_create_rule(SecCertificateCopyData(
+            certificate.as_concrete_TypeRef(),
+        ));
+        let issuer = CFData::wrap_under_create_rule(SecCertificateCopyNormalizedIssuerSequence(
+            certificate.as_concrete_TypeRef(),
+        ));
         let serial_number = CFData::wrap_under_create_rule(SecCertificateCopySerialNumberData(
-            certificate,
+            certificate.as_concrete_TypeRef(),
             std::ptr::null_mut(),
         ));
         let subject = CFData::wrap_under_create_rule(SecCertificateCopyNormalizedSubjectSequence(
-            certificate,
+            certificate.as_concrete_TypeRef(),
         ));
-        let persistent_id = id.bytes().to_vec();
-        let id = hex::encode(Sha256::digest(&persistent_id));
 
         Some(Cert {
-            persistent_id,
             class: serialize_uint(CKO_CERTIFICATE),
             token: serialize_uint(CK_TRUE),
-            id: id.into_bytes(),
+            id: format!("{:x}", id).into_bytes(),
             label: label.to_string().into_bytes(),
             value: der.bytes().to_vec(),
             issuer: issuer.bytes().to_vec(),
@@ -353,47 +303,25 @@ fn get_cert_helper(id: &CFData) -> Option<Cert> {
     }
 }
 
-fn get_key_attribute<T: TCFType + Clone>(key: &SecKeyRef, attr: CFStringRef) -> Option<T> {
+fn get_key_attribute<T: TCFType + Clone>(key: &SecKey, attr: CFStringRef) -> Option<T> {
     // TODO: is SecKeyCopyAttributes fallible? will wrap_under_create_rule panic?
-    let attributes: CFDictionary<CFString, T> =
-        unsafe { CFDictionary::wrap_under_create_rule(SecKeyCopyAttributes(*key)) };
+    let attributes: CFDictionary<CFString, T> = unsafe {
+        CFDictionary::wrap_under_create_rule(SecKeyCopyAttributes(key.as_concrete_TypeRef()))
+    };
     match attributes.find(attr as *const _) {
         Some(value) => Some((*value).clone()),
         None => None,
     }
 }
 
-fn get_key_helper(id: &CFData) -> Option<Key> {
-    unsafe {
-        // TODO: refactor common code
-        let id_data_slice = [id.as_CFType()];
-        let ids = CFArray::from_CFTypes(&id_data_slice);
+const OID_BYTES_SECP256R1: &[u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
+const OID_BYTES_SECP384R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x22];
+const OID_BYTES_SECP521R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23];
 
-        let class_key = CFString::wrap_under_get_rule(kSecClass);
-        let class_value = CFString::wrap_under_get_rule(kSecClassIdentity);
-        let match_key = CFString::wrap_under_get_rule(kSecMatchItemList);
-        let match_value = ids;
-        let return_ref_key = CFString::wrap_under_get_rule(kSecReturnRef);
-        let return_ref_value = CFBoolean::wrap_under_get_rule(kCFBooleanTrue);
-        let vals = vec![
-            (class_key.as_CFType(), class_value.as_CFType()),
-            (match_key.as_CFType(), match_value.as_CFType()),
-            (return_ref_key.as_CFType(), return_ref_value.as_CFType()),
-        ];
-        let dict = CFDictionary::from_CFType_pairs(&vals);
-        let mut identity = std::ptr::null();
-        let status = SecItemCopyMatching(dict.as_CFTypeRef() as CFDictionaryRef, &mut identity);
-        if status != errSecSuccess {
-            eprintln!("SecItemCopyMatching failed: {}", status);
-            return None;
-        }
-        if identity.is_null() {
-            eprintln!("couldn't get ref from id?");
-            return None;
-        }
-        let identity: SecIdentityRef = identity as SecIdentityRef;
+fn identity_to_key(identity: &SecIdentity, id: usize) -> Option<Key> {
+    unsafe {
         let mut certificate = std::ptr::null();
-        let status = SecIdentityCopyCertificate(identity, &mut certificate);
+        let status = SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate);
         if status != errSecSuccess {
             eprintln!("SecIdentityCopyCertificate failed: {}", status);
             return None;
@@ -402,13 +330,13 @@ fn get_key_helper(id: &CFData) -> Option<Key> {
             eprintln!("couldn't get certificate from identity?");
             return None;
         }
-        let certificate: SecCertificateRef = certificate as SecCertificateRef;
-        let key = SecCertificateCopyKey(certificate);
+        let certificate = SecCertificate::wrap_under_create_rule(certificate);
+        let key = SecCertificateCopyKey(certificate.as_concrete_TypeRef());
         if key.is_null() {
             eprintln!("couldn't get key from certificate?");
             return None;
         }
-        let key: SecKeyRef = key as SecKeyRef;
+        let key = SecKey::wrap_under_create_rule(key);
         let key_type: CFString = match get_key_attribute(&key, kSecAttrKeyType) {
             Some(key_type) => key_type,
             None => {
@@ -446,14 +374,12 @@ fn get_key_helper(id: &CFData) -> Option<Key> {
             eprintln!("unsupported key type");
             return None;
         };
-        let persistent_id = id.bytes().to_vec();
-        let id = hex::encode(Sha256::digest(&persistent_id));
 
         Some(Key {
-            persistent_id,
+            identity: SecIdentityHolder(identity.clone()),
             class: serialize_uint(CKO_PRIVATE_KEY),
             token: serialize_uint(CK_TRUE),
-            id: id.into_bytes(),
+            id: format!("{:x}", id).into_bytes(),
             private: serialize_uint(CK_TRUE),
             key_type: serialize_uint(key_type_value),
             ec_params,
@@ -461,17 +387,11 @@ fn get_key_helper(id: &CFData) -> Option<Key> {
     }
 }
 
-const OID_BYTES_SECP256R1: &[u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
-const OID_BYTES_SECP384R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x22];
-const OID_BYTES_SECP521R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23];
-
-// Attempt to list all known `SecIdentity`s as persistent identifiers that we
-// can cache for use later.
-fn list_identities_as_persistent_refs() -> Option<CFArray<CFData>> {
+fn list_identities() -> Option<Vec<(Cert, Key)>> {
     unsafe {
         let class_key = CFString::wrap_under_get_rule(kSecClass);
         let class_value = CFString::wrap_under_get_rule(kSecClassIdentity);
-        let return_ref_key = CFString::wrap_under_get_rule(kSecReturnPersistentRef);
+        let return_ref_key = CFString::wrap_under_get_rule(kSecReturnRef);
         let return_ref_value = CFBoolean::wrap_under_get_rule(kCFBooleanTrue);
         let match_key = CFString::wrap_under_get_rule(kSecMatchLimit);
         let match_value = CFString::wrap_under_get_rule(kSecMatchLimitAll);
@@ -491,8 +411,18 @@ fn list_identities_as_persistent_refs() -> Option<CFArray<CFData>> {
             eprintln!("no client certs?");
             return None;
         }
-        let result: CFArray<CFData> = CFArray::wrap_under_get_rule(result as CFArrayRef);
-        eprintln!("{}", result.len());
-        Some(result)
+        let identities = CFArray::<SecIdentityRef>::wrap_under_create_rule(result as CFArrayRef);
+        eprintln!("found {} identities", identities.len());
+        let mut identities_out = Vec::with_capacity(identities.len() as usize);
+        for (id, identity) in identities.get_all_values().iter().enumerate() {
+            let identity = SecIdentity::wrap_under_get_rule(*identity as SecIdentityRef);
+            let cert = identity_to_cert(&identity, id);
+            let key = identity_to_key(&identity, id);
+            match (cert, key) {
+                (Some(cert), Some(key)) => identities_out.push((cert, key)),
+                _ => {}
+            }
+        }
+        Some(identities_out)
     }
 }
