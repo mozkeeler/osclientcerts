@@ -18,6 +18,7 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 use byteorder::{NativeEndian, WriteBytesExt};
 use std::os::raw::c_void;
 
+use crate::der::*;
 use crate::types::*;
 
 #[repr(C)]
@@ -214,7 +215,21 @@ impl Key {
                 return Err(());
             }
             let signature = CFData::wrap_under_create_rule(result);
-            Ok((*signature).to_vec())
+            //   Ecdsa-Sig-Value  ::=  SEQUENCE  {
+            //        r     INTEGER,
+            //        s     INTEGER  }
+            // We need to return the integers r and s (TODO: leading zeroes?)
+            eprintln!("{:?}", (*signature).to_vec());
+            let mut sequence = Sequence::new(signature.bytes())?;
+            let r = sequence.read_unsigned_integer()?;
+            let s = sequence.read_unsigned_integer()?;
+            if !sequence.at_end() {
+                return Err(());
+            }
+            let mut signature_value = Vec::with_capacity(r.len() + s.len());
+            signature_value.extend_from_slice(r);
+            signature_value.extend_from_slice(s);
+            Ok(signature_value)
         }
     }
 }

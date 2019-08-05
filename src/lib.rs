@@ -12,6 +12,7 @@ extern crate core_foundation;
 #[macro_use]
 extern crate lazy_static;
 
+mod der;
 mod macos_backend;
 mod manager;
 mod types;
