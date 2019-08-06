@@ -69,14 +69,14 @@ impl<'a> Der<'a> {
             return Err(());
         }
         let (length1, rest) = try_read_bytes!(rest, 1);
-        let length = if length1[0] < 0x80 {
-            length1[0] as usize
+        let (length, to_read_from) = if length1[0] < 0x80 {
+            (length1[0] as usize, rest)
         } else if length1[0] == 0x81 {
             let (length, rest) = try_read_bytes!(rest, 1);
             if length[0] < 0x80 {
                 return Err(());
             }
-            length[0] as usize
+            (length[0] as usize, rest)
         } else if length1[0] == 0x82 {
             let (lengths, rest) = try_read_bytes!(rest, 2);
             let length = (&mut &lengths[..])
@@ -85,11 +85,11 @@ impl<'a> Der<'a> {
             if length < 256 {
                 return Err(());
             }
-            length as usize
+            (length as usize, rest)
         } else {
             return Err(());
         };
-        let (contents, rest) = try_read_bytes!(rest, length);
+        let (contents, rest) = try_read_bytes!(to_read_from, length);
         self.contents = rest;
         Ok(contents)
     }

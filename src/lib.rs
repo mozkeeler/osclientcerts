@@ -291,9 +291,7 @@ extern "C" fn C_GetAttributeValue(
     };
     for i in 0..ulCount {
         let mut attr = unsafe { &mut *pTemplate.offset(i as isize) };
-        eprintln!("    {}", attr);
         if let Some(attr_value) = object.get_attribute(attr.type_) {
-            eprintln!("    got attribute of len {}", attr_value.len());
             if attr.pValue.is_null() {
                 attr.ulValueLen = attr_value.len() as CK_ULONG;
             } else {
@@ -338,7 +336,6 @@ extern "C" fn C_FindObjectsInit(
     let mut attrs = Vec::new();
     for i in 0..ulCount {
         let attr = unsafe { &*pTemplate.offset(i as isize) };
-        eprintln!("    {}", attr);
         let slice = unsafe {
             std::slice::from_raw_parts(attr.pValue as *const u8, attr.ulValueLen as usize)
         };
@@ -510,7 +507,7 @@ extern "C" fn C_SignInit(
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
     eprint!("C_SignInit:");
-    eprintln!("");
+    eprintln!(" {} {}", hSession, hKey);
     if pMechanism.is_null() {
         eprintln!("CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
@@ -536,11 +533,14 @@ extern "C" fn C_Sign(
     pSignature: CK_BYTE_PTR,
     pulSignatureLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    eprintln!("C_Sign:");
+    eprintln!("C_Sign: {}", hSession);
     // TODO: we seem to always pass in allocated memory - do we need to handle
     // the case where we're called to see what the length will be first?
     if pData.is_null() || pSignature.is_null() || pulSignatureLen.is_null() {
-        eprintln!("CKR_ARGUMENTS_BAD");
+        eprintln!(
+            "CKR_ARGUMENTS_BAD: {:?} {:?} {:?}",
+            pData, pSignature, pulSignatureLen
+        );
         return CKR_ARGUMENTS_BAD;
     }
     let manager = IMPL.lock().unwrap();
