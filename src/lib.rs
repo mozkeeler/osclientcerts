@@ -328,7 +328,6 @@ extern "C" fn C_FindObjectsInit(
     ulCount: CK_ULONG,
 ) -> CK_RV {
     eprint!("C_FindObjectsInit: ");
-    eprintln!("");
     if pTemplate.is_null() {
         eprintln!("CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
