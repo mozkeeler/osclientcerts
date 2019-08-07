@@ -244,24 +244,30 @@ impl Key {
                 hash
             }
         };
-        unsafe {
+        let key = unsafe {
             let mut key = std::ptr::null();
             let status = SecIdentityCopyPrivateKey(self.identity.0.as_concrete_TypeRef(), &mut key);
             if status != errSecSuccess {
                 debug!("SecItemCopyPrivateKey failed: {}", status);
                 return Err(());
             }
-            let key = SecKey::wrap_under_create_rule(key);
-            let data = CFData::from_buffer(data);
+            if key.is_null() {
+                debug!("SecIdentityCopyPrivateKey didn't set key?");
+                return Err(());
+            }
+            SecKey::wrap_under_create_rule(key)
+        };
+        let signing_algorithm = match (&self.key_type_enum, data.len()) {
+            (&KeyType::EC, 32) => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA256 },
+            (&KeyType::RSA, 32) => unsafe { kSecKeyAlgorithmRSASignatureDigestPKCS1v15SHA256 },
+            (typ, len) => {
+                debug!("unsupported key type/hash combo: {:?} {}", typ, len);
+                return Err(());
+            }
+        };
+        let data = CFData::from_buffer(data);
+        let signature = unsafe {
             let mut error = std::ptr::null_mut();
-            let signing_algorithm = match (&self.key_type_enum, data.len()) {
-                (&KeyType::EC, 32) => kSecKeyAlgorithmECDSASignatureDigestX962SHA256,
-                (&KeyType::RSA, 32) => kSecKeyAlgorithmRSASignatureDigestPKCS1v15SHA256,
-                (typ, len) => {
-                    debug!("unsupported key type/hash combo: {:?} {}", typ, len);
-                    return Err(());
-                }
-            };
             let result = SecKeyCreateSignature(
                 key.as_concrete_TypeRef(),
                 signing_algorithm,
@@ -271,32 +277,31 @@ impl Key {
             if result.is_null() {
                 debug!("SecKeyCreateSignature failed");
                 let error = CFError::wrap_under_create_rule(error);
-                error.show();
+                error.show(); // TODO: log contents using logging system, not stderr
                 return Err(());
             }
-            let signature = CFData::wrap_under_create_rule(result);
-            debug!("{:?}", (*signature).to_vec());
-            let signature_value = match self.key_type_enum {
-                KeyType::EC => {
-                    //   Ecdsa-Sig-Value  ::=  SEQUENCE  {
-                    //        r     INTEGER,
-                    //        s     INTEGER  }
-                    // We need to return the integers r and s
-                    let mut sequence = Sequence::new(signature.bytes())?;
-                    let r = sequence.read_unsigned_integer()?;
-                    let s = sequence.read_unsigned_integer()?;
-                    if !sequence.at_end() {
-                        return Err(());
-                    }
-                    let mut signature_value = Vec::with_capacity(r.len() + s.len());
-                    signature_value.extend_from_slice(r);
-                    signature_value.extend_from_slice(s);
-                    signature_value
+            CFData::wrap_under_create_rule(result)
+        };
+        let signature_value = match self.key_type_enum {
+            KeyType::EC => {
+                //   Ecdsa-Sig-Value  ::=  SEQUENCE  {
+                //        r     INTEGER,
+                //        s     INTEGER  }
+                // We need to return the integers r and s
+                let mut sequence = Sequence::new(signature.bytes())?;
+                let r = sequence.read_unsigned_integer()?;
+                let s = sequence.read_unsigned_integer()?;
+                if !sequence.at_end() {
+                    return Err(());
                 }
-                KeyType::RSA => signature.bytes().to_vec(),
-            };
-            Ok(signature_value)
-        }
+                let mut signature_value = Vec::with_capacity(r.len() + s.len());
+                signature_value.extend_from_slice(r);
+                signature_value.extend_from_slice(s);
+                signature_value
+            }
+            KeyType::RSA => signature.bytes().to_vec(),
+        };
+        Ok(signature_value)
     }
 }
 
@@ -341,47 +346,55 @@ fn serialize_uint<T: Into<u64>>(value: T) -> Vec<u8> {
     }
 }
 
-fn identity_to_cert(identity: &SecIdentity, id: usize) -> Option<Cert> {
-    unsafe {
+fn identity_to_cert(identity: &SecIdentity, id: usize) -> Result<Cert, ()> {
+    let certificate = unsafe {
         let mut certificate = std::ptr::null();
         let status = SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate);
         if status != errSecSuccess {
             debug!("SecIdentityCopyCertificate failed: {}", status);
-            return None;
+            return Err(());
         }
         if certificate.is_null() {
             debug!("couldn't get certificate from identity?");
-            return None;
+            return Err(());
         }
-        let certificate = SecCertificate::wrap_under_create_rule(certificate);
-        let label = CFString::wrap_under_create_rule(SecCertificateCopySubjectSummary(
+        SecCertificate::wrap_under_create_rule(certificate)
+    };
+    let label = unsafe {
+        CFString::wrap_under_create_rule(SecCertificateCopySubjectSummary(
             certificate.as_concrete_TypeRef(),
-        ));
-        let der = CFData::wrap_under_create_rule(SecCertificateCopyData(
+        ))
+    };
+    let der = unsafe {
+        CFData::wrap_under_create_rule(SecCertificateCopyData(certificate.as_concrete_TypeRef()))
+    };
+    let issuer = unsafe {
+        CFData::wrap_under_create_rule(SecCertificateCopyNormalizedIssuerSequence(
             certificate.as_concrete_TypeRef(),
-        ));
-        let issuer = CFData::wrap_under_create_rule(SecCertificateCopyNormalizedIssuerSequence(
-            certificate.as_concrete_TypeRef(),
-        ));
-        let serial_number = CFData::wrap_under_create_rule(SecCertificateCopySerialNumberData(
+        ))
+    };
+    let serial_number = unsafe {
+        CFData::wrap_under_create_rule(SecCertificateCopySerialNumberData(
             certificate.as_concrete_TypeRef(),
             std::ptr::null_mut(),
-        ));
-        let subject = CFData::wrap_under_create_rule(SecCertificateCopyNormalizedSubjectSequence(
+        ))
+    };
+    let subject = unsafe {
+        CFData::wrap_under_create_rule(SecCertificateCopyNormalizedSubjectSequence(
             certificate.as_concrete_TypeRef(),
-        ));
+        ))
+    };
 
-        Some(Cert {
-            class: serialize_uint(CKO_CERTIFICATE),
-            token: serialize_uint(CK_TRUE),
-            id: format!("{:x}", id).into_bytes(),
-            label: label.to_string().into_bytes(),
-            value: der.bytes().to_vec(),
-            issuer: issuer.bytes().to_vec(),
-            serial_number: serial_number.bytes().to_vec(),
-            subject: subject.bytes().to_vec(),
-        })
-    }
+    Ok(Cert {
+        class: serialize_uint(CKO_CERTIFICATE),
+        token: serialize_uint(CK_TRUE),
+        id: format!("{:x}", id).into_bytes(),
+        label: label.to_string().into_bytes(),
+        value: der.bytes().to_vec(),
+        issuer: issuer.bytes().to_vec(),
+        serial_number: serial_number.bytes().to_vec(),
+        subject: subject.bytes().to_vec(),
+    })
 }
 
 fn get_key_attribute<T: TCFType + Clone>(key: &SecKey, attr: CFStringRef) -> Result<T, ()> {
@@ -400,7 +413,7 @@ const OID_BYTES_SECP384R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x22];
 const OID_BYTES_SECP521R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23];
 
 fn identity_to_key(identity: &SecIdentity, id: usize) -> Result<Key, ()> {
-    unsafe {
+    let certificate = unsafe {
         let mut certificate = std::ptr::null();
         let status = SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate);
         if status != errSecSuccess {
@@ -411,73 +424,77 @@ fn identity_to_key(identity: &SecIdentity, id: usize) -> Result<Key, ()> {
             debug!("couldn't get certificate from identity?");
             return Err(());
         }
-        let certificate = SecCertificate::wrap_under_create_rule(certificate);
+        SecCertificate::wrap_under_create_rule(certificate)
+    };
+    let key = unsafe {
         let key = SecCertificateCopyKey(certificate.as_concrete_TypeRef());
         if key.is_null() {
             debug!("couldn't get key from certificate?");
             return Err(());
         }
-        let key = SecKey::wrap_under_create_rule(key);
-        let key_type: CFString = get_key_attribute(&key, kSecAttrKeyType)?;
-        let key_size_in_bits: CFNumber = get_key_attribute(&key, kSecAttrKeySizeInBits)?;
-        let mut modulus = None;
-        let mut ec_params = None;
-        let (key_type_enum, key_type_attribute) =
-            if key_type == CFString::wrap_under_get_rule(kSecAttrKeyTypeRSA) {
-                // TODO: presumably this is fallible and we should check it before wrapping
-                let public_key = CFData::wrap_under_create_rule(SecKeyCopyExternalRepresentation(
+        SecKey::wrap_under_create_rule(key)
+    };
+    let key_type: CFString = get_key_attribute(&key, unsafe { kSecAttrKeyType })?;
+    let key_size_in_bits: CFNumber = get_key_attribute(&key, unsafe { kSecAttrKeySizeInBits })?;
+    let mut modulus = None;
+    let mut ec_params = None;
+    let (key_type_enum, key_type_attribute) =
+        if key_type.as_concrete_TypeRef() == unsafe { kSecAttrKeyTypeRSA } {
+            // TODO: presumably this is fallible and we should check it before wrapping
+            let public_key = unsafe {
+                CFData::wrap_under_create_rule(SecKeyCopyExternalRepresentation(
                     key.as_concrete_TypeRef(),
                     std::ptr::null_mut(),
-                ));
-                // RSAPublicKey ::= SEQUENCE {
-                //     modulus           INTEGER,  -- n
-                //     publicExponent    INTEGER   -- e
-                // }
-                let mut sequence = Sequence::new(public_key.bytes())?;
-                let modulus_value = sequence.read_unsigned_integer()?;
-                let exponent = sequence.read_unsigned_integer()?;
-                if !sequence.at_end() {
+                ))
+            };
+            // RSAPublicKey ::= SEQUENCE {
+            //     modulus           INTEGER,  -- n
+            //     publicExponent    INTEGER   -- e
+            // }
+            let mut sequence = Sequence::new(public_key.bytes())?;
+            let modulus_value = sequence.read_unsigned_integer()?;
+            let exponent = sequence.read_unsigned_integer()?;
+            if !sequence.at_end() {
+                return Err(());
+            }
+            modulus = Some(modulus_value.to_vec());
+            (KeyType::RSA, CKK_RSA)
+        } else if key_type.as_concrete_TypeRef() == unsafe { kSecAttrKeyTypeECSECPrimeRandom } {
+            // Assume all EC keys are secp256r1, secp384r1, or secp521r1. This
+            // is wrong, but the API doesn't seem to give us a way to determine
+            // which curve this key is on.
+            // This might not matter in practice, because it seems all NSS uses
+            // this for is to get the signature size.
+            match key_size_in_bits.to_i64() {
+                Some(256) => ec_params = Some(OID_BYTES_SECP256R1.to_vec()),
+                Some(384) => ec_params = Some(OID_BYTES_SECP384R1.to_vec()),
+                Some(521) => ec_params = Some(OID_BYTES_SECP521R1.to_vec()),
+                _ => {
+                    debug!("unsupported EC key");
                     return Err(());
                 }
-                modulus = Some(modulus_value.to_vec());
-                (KeyType::RSA, CKK_RSA)
-            } else if key_type == CFString::wrap_under_get_rule(kSecAttrKeyTypeECSECPrimeRandom) {
-                // Assume all EC keys are secp256r1, secp384r1, or secp521r1. This
-                // is wrong, but the API doesn't seem to give us a way to determine
-                // which curve this key is on.
-                // This might not matter in practice, because it seems all NSS uses
-                // this for is to get the signature size.
-                match key_size_in_bits.to_i64() {
-                    Some(256) => ec_params = Some(OID_BYTES_SECP256R1.to_vec()),
-                    Some(384) => ec_params = Some(OID_BYTES_SECP384R1.to_vec()),
-                    Some(521) => ec_params = Some(OID_BYTES_SECP521R1.to_vec()),
-                    _ => {
-                        debug!("unsupported EC key");
-                        return Err(());
-                    }
-                }
-                (KeyType::EC, CKK_EC)
-            } else {
-                debug!("unsupported key type");
-                return Err(());
-            };
+            }
+            (KeyType::EC, CKK_EC)
+        } else {
+            debug!("unsupported key type");
+            return Err(());
+        };
 
-        Ok(Key {
-            identity: SecIdentityHolder(identity.clone()),
-            class: serialize_uint(CKO_PRIVATE_KEY),
-            token: serialize_uint(CK_TRUE),
-            id: format!("{:x}", id).into_bytes(),
-            private: serialize_uint(CK_TRUE),
-            key_type: serialize_uint(key_type_attribute),
-            modulus,
-            ec_params,
-            key_type_enum,
-        })
-    }
+    Ok(Key {
+        identity: SecIdentityHolder(identity.clone()),
+        class: serialize_uint(CKO_PRIVATE_KEY),
+        token: serialize_uint(CK_TRUE),
+        id: format!("{:x}", id).into_bytes(),
+        private: serialize_uint(CK_TRUE),
+        key_type: serialize_uint(key_type_attribute),
+        modulus,
+        ec_params,
+        key_type_enum,
+    })
 }
 
 fn list_identities() -> Option<Vec<(Cert, Key)>> {
-    unsafe {
+    let identities = unsafe {
         let class_key = CFString::wrap_under_get_rule(kSecClass);
         let class_value = CFString::wrap_under_get_rule(kSecClassIdentity);
         let return_ref_key = CFString::wrap_under_get_rule(kSecReturnRef);
@@ -500,18 +517,18 @@ fn list_identities() -> Option<Vec<(Cert, Key)>> {
             debug!("no client certs?");
             return None;
         }
-        let identities = CFArray::<SecIdentityRef>::wrap_under_create_rule(result as CFArrayRef);
-        debug!("found {} identities", identities.len());
-        let mut identities_out = Vec::with_capacity(identities.len() as usize);
-        for (id, identity) in identities.get_all_values().iter().enumerate() {
-            let identity = SecIdentity::wrap_under_get_rule(*identity as SecIdentityRef);
-            let cert = identity_to_cert(&identity, id);
-            let key = identity_to_key(&identity, id);
-            match (cert, key) {
-                (Some(cert), Ok(key)) => identities_out.push((cert, key)),
-                _ => {}
-            }
+        CFArray::<SecIdentityRef>::wrap_under_create_rule(result as CFArrayRef)
+    };
+    debug!("found {} identities", identities.len());
+    let mut identities_out = Vec::with_capacity(identities.len() as usize);
+    for (id, identity) in identities.get_all_values().iter().enumerate() {
+        let identity = unsafe { SecIdentity::wrap_under_get_rule(*identity as SecIdentityRef) };
+        let cert = identity_to_cert(&identity, id);
+        let key = identity_to_key(&identity, id);
+        match (cert, key) {
+            (Ok(cert), Ok(key)) => identities_out.push((cert, key)),
+            _ => {}
         }
-        Some(identities_out)
     }
+    Some(identities_out)
 }
