@@ -248,7 +248,7 @@ impl Key {
             let mut key = std::ptr::null();
             let status = SecIdentityCopyPrivateKey(self.identity.0.as_concrete_TypeRef(), &mut key);
             if status != errSecSuccess {
-                debug!("SecItemCopyPrivateKey failed: {}", status);
+                debug!("SecIdentityCopyPrivateKey failed: {}", status);
                 return Err(());
             }
             if key.is_null() {
@@ -525,9 +525,8 @@ fn list_identities() -> Option<Vec<(Cert, Key)>> {
         let identity = unsafe { SecIdentity::wrap_under_get_rule(*identity as SecIdentityRef) };
         let cert = identity_to_cert(&identity, id);
         let key = identity_to_key(&identity, id);
-        match (cert, key) {
-            (Ok(cert), Ok(key)) => identities_out.push((cert, key)),
-            _ => {}
+        if let (Ok(cert), Ok(key)) = (cert, key) {
+            identities_out.push((cert, key));
         }
     }
     Some(identities_out)

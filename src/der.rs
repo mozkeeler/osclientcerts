@@ -34,12 +34,12 @@ impl<'a> Sequence<'a> {
     // TODO: we're not exhaustively validating this integer
     pub fn read_unsigned_integer(&mut self) -> Result<&'a [u8], ()> {
         let bytes = self.contents.read(INTEGER)?;
-        if bytes.len() < 1 {
+        if bytes.is_empty() {
             return Err(());
         }
         // There may be a leading zero (we should also check that the first bit
         // of the rest of the integer is set).
-        if bytes[0] == 0 {
+        if bytes[0] == 0 && bytes.len() > 1 {
             let (_, integer) = bytes.split_at(1);
             Ok(integer)
         } else {

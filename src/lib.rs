@@ -394,7 +394,7 @@ extern "C" fn C_FindObjects(
     for (index, handle) in handles.iter().enumerate() {
         if index < ulMaxObjectCount as usize {
             unsafe {
-                *(phObject.offset(index as isize)) = *handle;
+                *(phObject.add(index)) = *handle;
             }
         }
     }
