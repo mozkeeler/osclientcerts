@@ -248,7 +248,7 @@ impl Key {
             let mut key = std::ptr::null();
             let status = SecIdentityCopyPrivateKey(self.identity.0.as_concrete_TypeRef(), &mut key);
             if status != errSecSuccess {
-                eprintln!("SecItemCopyPrivateKey failed: {}", status);
+                debug!("SecItemCopyPrivateKey failed: {}", status);
                 return Err(());
             }
             let key = SecKey::wrap_under_create_rule(key);
@@ -258,7 +258,7 @@ impl Key {
                 (&KeyType::EC, 32) => kSecKeyAlgorithmECDSASignatureDigestX962SHA256,
                 (&KeyType::RSA, 32) => kSecKeyAlgorithmRSASignatureDigestPKCS1v15SHA256,
                 (typ, len) => {
-                    eprintln!("unsupported key type/hash combo: {:?} {}", typ, len);
+                    debug!("unsupported key type/hash combo: {:?} {}", typ, len);
                     return Err(());
                 }
             };
@@ -269,13 +269,13 @@ impl Key {
                 &mut error,
             );
             if result.is_null() {
-                eprintln!("SecKeyCreateSignature failed");
+                debug!("SecKeyCreateSignature failed");
                 let error = CFError::wrap_under_create_rule(error);
                 error.show();
                 return Err(());
             }
             let signature = CFData::wrap_under_create_rule(result);
-            eprintln!("{:?}", (*signature).to_vec());
+            debug!("{:?}", (*signature).to_vec());
             let signature_value = match self.key_type_enum {
                 KeyType::EC => {
                     //   Ecdsa-Sig-Value  ::=  SEQUENCE  {
@@ -346,11 +346,11 @@ fn identity_to_cert(identity: &SecIdentity, id: usize) -> Option<Cert> {
         let mut certificate = std::ptr::null();
         let status = SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate);
         if status != errSecSuccess {
-            eprintln!("SecIdentityCopyCertificate failed: {}", status);
+            debug!("SecIdentityCopyCertificate failed: {}", status);
             return None;
         }
         if certificate.is_null() {
-            eprintln!("couldn't get certificate from identity?");
+            debug!("couldn't get certificate from identity?");
             return None;
         }
         let certificate = SecCertificate::wrap_under_create_rule(certificate);
@@ -404,17 +404,17 @@ fn identity_to_key(identity: &SecIdentity, id: usize) -> Result<Key, ()> {
         let mut certificate = std::ptr::null();
         let status = SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate);
         if status != errSecSuccess {
-            eprintln!("SecIdentityCopyCertificate failed: {}", status);
+            debug!("SecIdentityCopyCertificate failed: {}", status);
             return Err(());
         }
         if certificate.is_null() {
-            eprintln!("couldn't get certificate from identity?");
+            debug!("couldn't get certificate from identity?");
             return Err(());
         }
         let certificate = SecCertificate::wrap_under_create_rule(certificate);
         let key = SecCertificateCopyKey(certificate.as_concrete_TypeRef());
         if key.is_null() {
-            eprintln!("couldn't get key from certificate?");
+            debug!("couldn't get key from certificate?");
             return Err(());
         }
         let key = SecKey::wrap_under_create_rule(key);
@@ -452,13 +452,13 @@ fn identity_to_key(identity: &SecIdentity, id: usize) -> Result<Key, ()> {
                     Some(384) => ec_params = Some(OID_BYTES_SECP384R1.to_vec()),
                     Some(521) => ec_params = Some(OID_BYTES_SECP521R1.to_vec()),
                     _ => {
-                        eprintln!("unsupported EC key");
+                        debug!("unsupported EC key");
                         return Err(());
                     }
                 }
                 (KeyType::EC, CKK_EC)
             } else {
-                eprintln!("unsupported key type");
+                debug!("unsupported key type");
                 return Err(());
             };
 
@@ -493,15 +493,15 @@ fn list_identities() -> Option<Vec<(Cert, Key)>> {
         let mut result = std::ptr::null();
         let status = SecItemCopyMatching(dict.as_CFTypeRef() as CFDictionaryRef, &mut result);
         if status != errSecSuccess {
-            eprintln!("SecItemCopyMatching failed: {}", status);
+            debug!("SecItemCopyMatching failed: {}", status);
             return None;
         }
         if result.is_null() {
-            eprintln!("no client certs?");
+            debug!("no client certs?");
             return None;
         }
         let identities = CFArray::<SecIdentityRef>::wrap_under_create_rule(result as CFArrayRef);
-        eprintln!("found {} identities", identities.len());
+        debug!("found {} identities", identities.len());
         let mut identities_out = Vec::with_capacity(identities.len() as usize);
         for (id, identity) in identities.get_all_values().iter().enumerate() {
             let identity = SecIdentity::wrap_under_get_rule(*identity as SecIdentityRef);
