@@ -4,6 +4,16 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
+#[link(name = "Security", kind = "framework")]
+extern "C" {}
+
+extern crate byteorder;
+#[macro_use]
+extern crate core_foundation;
+#[macro_use]
+extern crate log;
+extern crate osclientcerts_types;
+
 use core_foundation::array::*;
 use core_foundation::base::*;
 use core_foundation::boolean::*;
@@ -16,10 +26,11 @@ use core_foundation::string::*;
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use byteorder::{NativeEndian, WriteBytesExt};
+use osclientcerts_types::*;
 use std::os::raw::c_void;
 
-use crate::der::*;
-use crate::types::*;
+mod der;
+use der::*;
 
 #[repr(C)]
 pub struct __SecIdentity(c_void);

@@ -1,19 +1,7 @@
-[package]
-name = "osclientcerts"
-version = "0.1.0"
-authors = ["Dana Keeler <dkeeler@mozilla.com>"]
-edition = "2018"
+[workspace]
 
-[dependencies]
-byteorder = "1.3.2"
-core-foundation = "0.6"
-env_logger = "0.6"
-lazy_static = "1"
-log = "0.4"
-
-[build-dependencies]
-bindgen = "0.49"
-
-[lib]
-name = "osclientcerts"
-crate-type = ["cdylib"]
+members = [
+    "osclientcerts-macos",
+    "osclientcerts-module",
+    "osclientcerts-types",
+]

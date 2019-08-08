@@ -3,27 +3,21 @@
 #![allow(non_upper_case_globals)]
 #![allow(unused_variables)]
 
-#[link(name = "Security", kind = "framework")]
-extern "C" {}
-
 extern crate byteorder;
-#[macro_use]
-extern crate core_foundation;
 extern crate env_logger;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
+extern crate osclientcerts_types;
+#[cfg(target_os = "macos")]
+extern crate osclientcerts_macos as osclientcerts_platform;
 
-mod der;
-mod macos_backend;
-mod manager;
-mod types;
-
-use manager::Manager;
-use types::*;
-
+use osclientcerts_types::*;
 use std::sync::Mutex;
+
+mod manager;
+use manager::Manager;
 
 lazy_static! {
     static ref IMPL: Mutex<Manager> = {
