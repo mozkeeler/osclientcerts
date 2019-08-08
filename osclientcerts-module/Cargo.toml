@@ -13,6 +13,8 @@ osclientcerts-types = { path = "../osclientcerts-types" }
 
 [target.'cfg(target_os = "macos")'.dependencies.osclientcerts-macos]
 path = "../osclientcerts-macos"
+[target.'cfg(target_os = "windows")'.dependencies.osclientcerts-windows]
+path = "../osclientcerts-windows"
 
 [lib]
 name = "osclientcerts"
