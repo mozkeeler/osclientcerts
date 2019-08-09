@@ -8,12 +8,14 @@ extern crate byteorder;
 #[macro_use]
 extern crate log;
 extern crate osclientcerts_types;
+extern crate winapi;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use byteorder::{NativeEndian, WriteBytesExt};
 use osclientcerts_types::*;
-use std::os::raw::c_void;
+use std::ffi::CString;
+use winapi::um::wincrypt::*;
 
 pub struct Cert {
     class: Vec<u8>,
@@ -295,6 +297,36 @@ impl Object {
 }
 
 pub fn list_objects() -> Vec<Object> {
+    let mut objects = Vec::new();
+    unsafe {
+        let location_flags = CERT_SYSTEM_STORE_LOCAL_MACHINE
+            | CERT_STORE_OPEN_EXISTING_FLAG
+            | CERT_STORE_READONLY_FLAG;
+        let store_name = CString::new("My").expect("CString::new failed?");
+        // TODO: raii types
+        // TODO: one of these 0s is supposed to be X509_ASN_ENCODING I think
+        let store = CertOpenStore(
+            CERT_STORE_PROV_SYSTEM_REGISTRY_A,
+            0,
+            0,
+            location_flags,
+            store_name.into_raw() as *const std::ffi::c_void,
+        );
+        if store.is_null() {
+            warn!("CertOpenStore failed");
+            return objects;
+        }
+        let mut cert_context: PCCERT_CONTEXT = std::ptr::null_mut();
+        cert_context = CertFindCertificateInStore(
+            store,
+            X509_ASN_ENCODING,
+            CERT_FIND_HAS_PRIVATE_KEY,
+            CERT_FIND_ANY,
+            std::ptr::null_mut(),
+            cert_context,
+        );
+        eprintln!("{:?}", cert_context);
+    }
     /*
     let mut objects = Vec::new();
     if let Some(identities) = list_identities() {

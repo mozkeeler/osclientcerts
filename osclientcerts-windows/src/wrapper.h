@@ -1,2 +1,2 @@
 #include <Windows.h>
-#include <wincrypt.h>
+#include <ncrypt.h>

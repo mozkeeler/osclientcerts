@@ -9,9 +9,9 @@ extern crate env_logger;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-extern crate osclientcerts_types;
 #[cfg(target_os = "macos")]
 extern crate osclientcerts_macos as osclientcerts_platform;
+extern crate osclientcerts_types;
 #[cfg(target_os = "windows")]
 extern crate osclientcerts_windows as osclientcerts_platform;
 
