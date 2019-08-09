@@ -15,6 +15,7 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 use byteorder::{NativeEndian, WriteBytesExt};
 use osclientcerts_types::*;
 use std::ffi::CString;
+use std::slice;
 use winapi::um::wincrypt::*;
 
 pub struct Cert {
@@ -296,15 +297,55 @@ impl Object {
     }
 }
 
+fn cert_from_cert_context(context: &CERT_CONTEXT) -> Cert {
+    let cert_info = unsafe { &*context.pCertInfo };
+    let id = unsafe {
+        slice::from_raw_parts(
+            cert_info.SubjectUniqueId.pbData,
+            cert_info.SubjectUniqueId.cbData as usize,
+        )
+    };
+    let id = id.to_vec();
+    let label = id.clone(); // TODO
+    let value =
+        unsafe { slice::from_raw_parts(context.pbCertEncoded, context.cbCertEncoded as usize) };
+    let value = value.to_vec();
+    let issuer =
+        unsafe { slice::from_raw_parts(cert_info.Issuer.pbData, cert_info.Issuer.cbData as usize) };
+    let issuer = issuer.to_vec();
+    let serial_number = unsafe {
+        slice::from_raw_parts(
+            cert_info.SerialNumber.pbData,
+            cert_info.SerialNumber.cbData as usize,
+        )
+    };
+    let serial_number = serial_number.to_vec();
+    let subject = unsafe {
+        slice::from_raw_parts(cert_info.Subject.pbData, cert_info.Subject.cbData as usize)
+    };
+    let subject = subject.to_vec();
+    Cert {
+        class: serialize_uint(CKO_CERTIFICATE),
+        token: serialize_uint(CK_TRUE),
+        id,
+        label,
+        value,
+        issuer,
+        serial_number,
+        subject,
+    }
+}
+
 pub fn list_objects() -> Vec<Object> {
     let mut objects = Vec::new();
     unsafe {
-        let location_flags = CERT_SYSTEM_STORE_LOCAL_MACHINE
+        //let location_flags = CERT_SYSTEM_STORE_LOCAL_MACHINE
+        let location_flags = CERT_SYSTEM_STORE_CURRENT_USER // TODO: loop over multiple locations
             | CERT_STORE_OPEN_EXISTING_FLAG
             | CERT_STORE_READONLY_FLAG;
-        let store_name = CString::new("My").expect("CString::new failed?");
-        // TODO: raii types
-        // TODO: one of these 0s is supposed to be X509_ASN_ENCODING I think
+        let store_name = CString::new("My").expect("CString::new failed?"); // TODO: more locations?
+                                                                            // TODO: raii types
+                                                                            // TODO: one of these 0s is supposed to be X509_ASN_ENCODING I think
         let store = CertOpenStore(
             CERT_STORE_PROV_SYSTEM_REGISTRY_A,
             0,
@@ -325,7 +366,19 @@ pub fn list_objects() -> Vec<Object> {
             std::ptr::null_mut(),
             cert_context,
         );
-        eprintln!("{:?}", cert_context);
+        while !cert_context.is_null() {
+            eprintln!("{:?}", cert_context);
+            objects.push(Object::Cert(cert_from_cert_context(&*cert_context)));
+            // TODO: refactor common code?
+            cert_context = CertFindCertificateInStore(
+                store,
+                X509_ASN_ENCODING,
+                CERT_FIND_HAS_PRIVATE_KEY,
+                CERT_FIND_ANY,
+                std::ptr::null_mut(),
+                cert_context,
+            );
+        }
     }
     /*
     let mut objects = Vec::new();
@@ -335,9 +388,8 @@ pub fn list_objects() -> Vec<Object> {
             objects.push(Object::Key(key));
         }
     }
-    objects
     */
-    Vec::new()
+    objects
 }
 
 fn serialize_uint<T: Into<u64>>(value: T) -> Vec<u8> {
