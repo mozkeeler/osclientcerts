@@ -370,6 +370,22 @@ pub fn list_objects() -> Vec<Object> {
             eprintln!("{:?}", cert_context);
             objects.push(Object::Cert(cert_from_cert_context(&*cert_context)));
             // TODO: refactor common code?
+            let mut key_handle = 0;
+            let mut key_spec = 0;
+            let mut must_free = 0;
+            if CryptAcquireCertificatePrivateKey(
+                cert_context,
+                CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG,
+                std::ptr::null_mut(),
+                &mut key_handle,
+                &mut key_spec,
+                &mut must_free,
+            ) == 1
+            {
+                // TODO: BOOL, other types, etc.
+                eprintln!("{:?} {:?} {:?}", key_handle, key_spec, must_free);
+            }
+
             cert_context = CertFindCertificateInStore(
                 store,
                 X509_ASN_ENCODING,
