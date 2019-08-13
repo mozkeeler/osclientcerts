@@ -349,6 +349,7 @@ extern "C" fn C_FindObjectsInit(
     let mut attrs = Vec::new();
     for i in 0..ulCount {
         let attr = unsafe { &*pTemplate.offset(i as isize) };
+        debug!("  {}", attr);
         let slice = unsafe {
             std::slice::from_raw_parts(attr.pValue as *const u8, attr.ulValueLen as usize)
         };
@@ -384,6 +385,7 @@ extern "C" fn C_FindObjects(
             return CKR_ARGUMENTS_BAD;
         }
     };
+    debug!("C_FindObjects: found handles {:?}", handles);
     // TODO: not quite sure what the right semantics are re. if we have more handles than ulMaxObjectCount
     unsafe {
         *pulObjectCount = handles.len() as CK_ULONG;

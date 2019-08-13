@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "osclientcerts-der",
     "osclientcerts-macos",
     "osclientcerts-module",
     "osclientcerts-types",
