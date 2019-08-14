@@ -3,6 +3,9 @@ name = "osclientcerts"
 version = "0.1.0"
 authors = ["Dana Keeler <dkeeler@mozilla.com>"]
 edition = "2018"
+description = "Platform-specific support for client authentication certificates in Firefox"
+repository = "https://github.com/mozkeeler/osclientcerts"
+license = "MPL-2"
 
 [dependencies]
 byteorder = "1.3.2"
