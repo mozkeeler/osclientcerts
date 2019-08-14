@@ -19,6 +19,7 @@ use osclientcerts_der::*;
 use osclientcerts_types::*;
 use sha2::{Digest, Sha256};
 use std::ffi::{CStr, CString};
+use std::os::raw::c_void;
 use std::slice;
 use winapi::um::wincrypt::*;
 
@@ -196,71 +197,59 @@ impl Key {
 
     // The input data is a hash. What algorithm we use depends on the size of the hash.
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, ()> {
-        // TODO: refactor shared logic
-        // TODO: if we're RSA, data is:
-        // SEQUENCE {
-        //   SEQUENCE {
-        //     OID (hash)
-        //     params (null?)
-        //   }
-        //   OCTET STRING (the hash to sign)
-        // }
-        // This shouldn't need to be mut, but FFI... :/
-        eprintln!("{:x?}", data);
-        let mut data = match self.key_type_enum {
-            KeyType::EC => {
-                eprintln!("we think this is an EC key");
-                data.to_vec()
-            }
-            KeyType::RSA => {
-                eprintln!("we think this is an RSA key");
-                let mut sequence = Sequence::new(data)?;
-                let mut hash_algorithm = sequence.read_sequence()?;
-                let hash_oid = hash_algorithm.read_oid()?;
-                let hash = sequence.read_octet_string()?;
-                if !sequence.at_end() {
-                    return Err(());
-                }
-                eprintln!("hash_oid: {:x?}", hash_oid);
-                hash.to_vec()
-            }
+        // TODO: is the params bit necessary?
+        let (mut data, params, flags) = match self.key_type_enum {
+            KeyType::EC => (data.to_vec(), None, 0),
+            KeyType::RSA => (
+                data.to_vec(),
+                Some(BCRYPT_PKCS1_PADDING_INFO {
+                    pszAlgId: std::ptr::null(),
+                }),
+                NCRYPT_PAD_PKCS1_FLAG,
+            ),
+        };
+        let params_ptr = if let Some(mut params) = params {
+            (&mut params as *mut BCRYPT_PKCS1_PADDING_INFO) as *mut c_void
+        } else {
+            std::ptr::null_mut()
         };
         let mut signature_len = 0;
         // TODO: len conversion safety
         let status = unsafe {
             NCryptSignHash(
                 self.handle,
-                std::ptr::null_mut(),
+                params_ptr,
                 data.as_mut_ptr(),
                 data.len() as u32,
                 std::ptr::null_mut(),
                 0,
                 &mut signature_len,
-                0,
+                flags,
             )
         };
         // 0 is "ERROR_SUCCESS" (but "ERROR_SUCCESS" is unsigned, whereas SECURITY_STATUS is signed)
         if status != 0 {
-            debug!("NCryptSignHash failed");
+            debug!("NCryptSignHash failed (first time), {}", status);
             // TODO: stringify/log error?
             return Err(());
         }
+        debug!("signature_len is {}", signature_len);
         let mut signature = vec![0; signature_len as usize];
-        let mut final_signature_len = 0;
+        let mut final_signature_len = signature_len;
         let status = unsafe {
             NCryptSignHash(
                 self.handle,
-                std::ptr::null_mut(),
+                params_ptr,
                 data.as_mut_ptr(),
                 data.len() as u32,
                 signature.as_mut_ptr(),
                 signature_len,
                 &mut final_signature_len,
-                0,
+                flags,
             )
         };
         if status != 0 {
-            debug!("NCryptSignHash failed");
+            debug!("NCryptSignHash failed (second time) {}", status);
             // TODO: stringify/log error?
             return Err(());
         }
@@ -446,6 +435,7 @@ pub fn list_objects() -> Vec<Object> {
             let mut key_handle = 0;
             let mut key_spec = 0;
             let mut must_free = 0;
+            // TODO: CRYPT_ACQUIRE_SILENT_FLAG may be helpful here.
             if CryptAcquireCertificatePrivateKey(
                 cert_context,
                 CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG, // TODO: currently we only support CNG
