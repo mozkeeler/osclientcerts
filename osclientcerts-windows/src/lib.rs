@@ -19,6 +19,7 @@ use osclientcerts_der::*;
 use osclientcerts_types::*;
 use sha2::{Digest, Sha256};
 use std::ffi::{CStr, CString};
+use std::ops::Deref;
 use std::os::raw::c_void;
 use std::slice;
 use winapi::shared::bcrypt::*;
@@ -258,29 +259,15 @@ impl Key {
         }
         assert!(final_signature_len == signature_len);
         eprintln!("signature? {:x?}", signature);
-        let signature_value = match self.key_type_enum {
-            KeyType::EC => {
-                /*
-                //   Ecdsa-Sig-Value  ::=  SEQUENCE  {
-                //        r     INTEGER,
-                //        s     INTEGER  }
-                // We need to return the integers r and s
-                let mut sequence = Sequence::new(&signature)?;
-                let r = sequence.read_unsigned_integer()?;
-                let s = sequence.read_unsigned_integer()?;
-                if !sequence.at_end() {
-                    return Err(());
-                }
-                let mut signature_value = Vec::with_capacity(r.len() + s.len());
-                signature_value.extend_from_slice(r);
-                signature_value.extend_from_slice(s);
-                signature_value
-                */
-                signature
-            }
-            KeyType::RSA => signature,
-        };
-        Ok(signature_value)
+        Ok(signature)
+    }
+}
+
+impl Drop for Key {
+    fn drop(&mut self) {
+        unsafe {
+            NCryptFreeObject(self.handle as NCRYPT_HANDLE);
+        }
     }
 }
 
@@ -401,6 +388,34 @@ fn key_from_cert_context_and_key_handle(
     })
 }
 
+struct CertStore {
+    handle: HCERTSTORE,
+}
+
+impl Drop for CertStore {
+    fn drop(&mut self) {
+        if !self.handle.is_null() {
+            unsafe {
+                CertCloseStore(self.handle, 0);
+            }
+        }
+    }
+}
+
+impl Deref for CertStore {
+    type Target = HCERTSTORE;
+
+    fn deref(&self) -> &Self::Target {
+        &self.handle
+    }
+}
+
+impl CertStore {
+    fn new(handle: HCERTSTORE) -> CertStore {
+        CertStore { handle }
+    }
+}
+
 pub fn list_objects() -> Vec<Object> {
     let mut objects = Vec::new();
     unsafe {
@@ -411,20 +426,20 @@ pub fn list_objects() -> Vec<Object> {
         let store_name = CString::new("My").expect("CString::new failed?"); // TODO: more locations?
                                                                             // TODO: raii types
                                                                             // TODO: one of these 0s is supposed to be X509_ASN_ENCODING I think
-        let store = CertOpenStore(
+        let store = CertStore::new(CertOpenStore(
             CERT_STORE_PROV_SYSTEM_REGISTRY_A,
             0,
             0,
             location_flags,
             store_name.into_raw() as *const std::ffi::c_void,
-        );
+        ));
         if store.is_null() {
             warn!("CertOpenStore failed");
             return objects;
         }
         let mut cert_context: PCCERT_CONTEXT = std::ptr::null_mut();
         cert_context = CertFindCertificateInStore(
-            store,
+            *store,
             X509_ASN_ENCODING,
             CERT_FIND_HAS_PRIVATE_KEY,
             CERT_FIND_ANY,
@@ -449,6 +464,7 @@ pub fn list_objects() -> Vec<Object> {
             ) == 1
             {
                 assert!(key_spec == CERT_NCRYPT_KEY_SPEC);
+                assert!(must_free != 0);
                 if let Ok(key) =
                     key_from_cert_context_and_key_handle(&*cert_context, key_handle as u64)
                 {
@@ -458,7 +474,7 @@ pub fn list_objects() -> Vec<Object> {
             }
 
             cert_context = CertFindCertificateInStore(
-                store,
+                *store,
                 X509_ASN_ENCODING,
                 CERT_FIND_HAS_PRIVATE_KEY,
                 CERT_FIND_ANY,
