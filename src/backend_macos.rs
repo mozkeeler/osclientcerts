@@ -7,13 +7,7 @@
 #[link(name = "Security", kind = "framework")]
 extern "C" {}
 
-extern crate byteorder;
-#[macro_use]
-extern crate core_foundation;
-#[macro_use]
-extern crate log;
-extern crate osclientcerts_der;
-extern crate osclientcerts_types;
+use std::os::raw::c_void;
 
 use core_foundation::array::*;
 use core_foundation::base::*;
@@ -27,9 +21,9 @@ use core_foundation::string::*;
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use byteorder::{NativeEndian, WriteBytesExt};
-use osclientcerts_der::*;
-use osclientcerts_types::*;
-use std::os::raw::c_void;
+
+use crate::der::*;
+use crate::types::*;
 
 #[repr(C)]
 pub struct __SecIdentity(c_void);

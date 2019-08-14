@@ -1,9 +1,25 @@
-[workspace]
+[package]
+name = "osclientcerts"
+version = "0.1.0"
+authors = ["Dana Keeler <dkeeler@mozilla.com>"]
+edition = "2018"
 
-members = [
-    "osclientcerts-der",
-    "osclientcerts-macos",
-    "osclientcerts-module",
-    "osclientcerts-types",
-    "osclientcerts-windows",
-]
+[dependencies]
+byteorder = "1.3.2"
+env_logger = "0.6"
+lazy_static = "1"
+log = "0.4"
+sha2 = "0.8"
+
+[target.'cfg(target_os = "macos")'.dependencies.core-foundation]
+version = "0.6"
+
+[target.'cfg(target_os = "windows")'.dependencies.winapi]
+version = "0.3.7"
+features = ["wincrypt"]
+
+[build-dependencies]
+bindgen = "0.49"
+
+[lib]
+crate-type = ["cdylib"]

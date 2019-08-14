@@ -1,5 +1,3 @@
-extern crate byteorder;
-
 use byteorder::{BigEndian, ReadBytesExt};
 
 macro_rules! try_read_bytes {

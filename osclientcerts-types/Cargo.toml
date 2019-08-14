@@ -1,5 +1,0 @@
-[package]
-name = "osclientcerts-types"
-version = "0.1.0"
-authors = ["Dana Keeler <dkeeler@mozilla.com>"]
-edition = "2018"

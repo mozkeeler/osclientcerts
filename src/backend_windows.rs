@@ -4,19 +4,9 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
-extern crate byteorder;
-#[macro_use]
-extern crate log;
-extern crate osclientcerts_der;
-extern crate osclientcerts_types;
-extern crate sha2;
-extern crate winapi;
-
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use byteorder::{NativeEndian, WriteBytesExt};
-use osclientcerts_der::*;
-use osclientcerts_types::*;
 use sha2::{Digest, Sha256};
 use std::ffi::{CStr, CString};
 use std::ops::Deref;
@@ -25,6 +15,9 @@ use std::slice;
 use winapi::shared::bcrypt::*;
 use winapi::um::ncrypt::*;
 use winapi::um::wincrypt::*;
+
+use crate::der::*;
+use crate::types::*;
 
 pub struct Cert {
     class: Vec<u8>,

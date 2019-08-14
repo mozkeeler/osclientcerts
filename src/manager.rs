@@ -1,7 +1,11 @@
-use osclientcerts_platform::*;
-use osclientcerts_types::*;
-
 use std::collections::{BTreeMap, BTreeSet};
+
+#[cfg(target_os = "macos")]
+use crate::backend_macos as backend;
+#[cfg(target_os = "windows")]
+use crate::backend_windows as backend;
+use crate::types::*;
+use backend::*;
 
 pub struct Manager {
     sessions: BTreeSet<CK_SESSION_HANDLE>,

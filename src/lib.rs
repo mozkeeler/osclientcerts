@@ -9,17 +9,26 @@ extern crate env_logger;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-#[cfg(target_os = "macos")]
-extern crate osclientcerts_macos as osclientcerts_platform;
-extern crate osclientcerts_types;
-#[cfg(target_os = "windows")]
-extern crate osclientcerts_windows as osclientcerts_platform;
 
-use osclientcerts_types::*;
+#[cfg(target_os = "macos")]
+#[macro_use]
+extern crate core_foundation;
+extern crate sha2;
+#[cfg(target_os = "windows")]
+extern crate winapi;
+
 use std::sync::Mutex;
 
+#[cfg(target_os = "macos")]
+mod backend_macos;
+#[cfg(target_os = "windows")]
+mod backend_windows;
+mod der;
 mod manager;
+mod types;
+
 use manager::Manager;
+use types::*;
 
 lazy_static! {
     static ref IMPL: Mutex<Manager> = {
