@@ -21,6 +21,8 @@ use sha2::{Digest, Sha256};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_void;
 use std::slice;
+use winapi::shared::bcrypt::*;
+use winapi::um::ncrypt::*;
 use winapi::um::wincrypt::*;
 
 pub struct Cert {
@@ -197,12 +199,13 @@ impl Key {
 
     // The input data is a hash. What algorithm we use depends on the size of the hash.
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, ()> {
-        // TODO: is the params bit necessary?
-        let (mut data, params, flags) = match self.key_type_enum {
-            KeyType::EC => (data.to_vec(), None, 0),
+        let mut data = data.to_vec();
+        let (params, flags) = match self.key_type_enum {
+            KeyType::EC => (None, 0),
             KeyType::RSA => (
-                data.to_vec(),
                 Some(BCRYPT_PKCS1_PADDING_INFO {
+                    // Because the hash algorithm is encoded in `data`, we don't have to (and don't
+                    // want to) specify a particular algorithm here.
                     pszAlgId: std::ptr::null(),
                 }),
                 NCRYPT_PAD_PKCS1_FLAG,
