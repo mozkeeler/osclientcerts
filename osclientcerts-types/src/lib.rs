@@ -19,14 +19,16 @@ pub type CK_VOID_PTR_PTR = *mut CK_VOID_PTR;
 pub const CK_TRUE: CK_BYTE = 1;
 pub const CK_FALSE: CK_BYTE = 0;
 
-#[repr(packed, C)]
+#[cfg_attr(target_os = "macos", repr(C))]
+#[cfg_attr(target_os = "windows", repr(packed, C))]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CK_VERSION {
     pub major: CK_BYTE,
     pub minor: CK_BYTE,
 }
 
-#[repr(packed, C)]
+#[cfg_attr(target_os = "macos", repr(C))]
+#[cfg_attr(target_os = "windows", repr(packed, C))]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CK_INFO {
     pub cryptokiVersion: CK_VERSION,
@@ -41,7 +43,8 @@ pub type CK_NOTIFICATION = CK_ULONG;
 pub type CK_SLOT_ID = CK_ULONG;
 pub type CK_SLOT_ID_PTR = *mut CK_SLOT_ID;
 
-#[repr(packed, C)]
+#[cfg_attr(target_os = "macos", repr(C))]
+#[cfg_attr(target_os = "windows", repr(packed, C))]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CK_SLOT_INFO {
     // We're cheating here because derive only goes up to 32 for some reason.
@@ -54,7 +57,8 @@ pub struct CK_SLOT_INFO {
 }
 
 pub type CK_SLOT_INFO_PTR = *mut CK_SLOT_INFO;
-#[repr(packed, C)]
+#[cfg_attr(target_os = "macos", repr(C))]
+#[cfg_attr(target_os = "windows", repr(packed, C))]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CK_TOKEN_INFO {
     pub label: [CK_UTF8CHAR; 32usize],
@@ -82,7 +86,8 @@ pub type CK_SESSION_HANDLE_PTR = *mut CK_SESSION_HANDLE;
 pub type CK_USER_TYPE = CK_ULONG;
 pub type CK_STATE = CK_ULONG;
 
-#[repr(packed, C)]
+#[cfg_attr(target_os = "macos", repr(C))]
+#[cfg_attr(target_os = "windows", repr(packed, C))]
 #[derive(Copy, Clone, Debug, Default)]
 pub struct CK_SESSION_INFO {
     pub slotID: CK_SLOT_ID,
@@ -97,7 +102,8 @@ pub type CK_OBJECT_HANDLE_PTR = *mut CK_OBJECT_HANDLE;
 pub type CK_ATTRIBUTE_TYPE = CK_ULONG;
 pub type CK_OBJECT_CLASS = CK_ULONG;
 pub type CK_KEY_TYPE = CK_ULONG;
-#[repr(packed, C)]
+#[cfg_attr(target_os = "macos", repr(C))]
+#[cfg_attr(target_os = "windows", repr(packed, C))]
 #[derive(Debug, Copy)]
 pub struct CK_ATTRIBUTE {
     pub type_: CK_ATTRIBUTE_TYPE,
@@ -155,7 +161,8 @@ impl fmt::Display for CK_ATTRIBUTE {
 pub type CK_ATTRIBUTE_PTR = *mut CK_ATTRIBUTE;
 pub type CK_MECHANISM_TYPE = CK_ULONG;
 pub type CK_MECHANISM_TYPE_PTR = *mut CK_MECHANISM_TYPE;
-#[repr(packed, C)]
+#[cfg_attr(target_os = "macos", repr(C))]
+#[cfg_attr(target_os = "windows", repr(packed, C))]
 #[derive(Debug, Copy)]
 pub struct CK_MECHANISM {
     pub mechanism: CK_MECHANISM_TYPE,
@@ -182,7 +189,8 @@ impl fmt::Display for CK_MECHANISM {
     }
 }
 pub type CK_MECHANISM_PTR = *mut CK_MECHANISM;
-#[repr(packed, C)]
+#[cfg_attr(target_os = "macos", repr(C))]
+#[cfg_attr(target_os = "windows", repr(packed, C))]
 #[derive(Debug, Copy)]
 pub struct CK_MECHANISM_INFO {
     pub ulMinKeySize: CK_ULONG,
@@ -209,7 +217,8 @@ pub type CK_DESTROYMUTEX =
     ::std::option::Option<unsafe extern "C" fn(pMutex: CK_VOID_PTR) -> CK_RV>;
 pub type CK_LOCKMUTEX = ::std::option::Option<unsafe extern "C" fn(pMutex: CK_VOID_PTR) -> CK_RV>;
 pub type CK_UNLOCKMUTEX = ::std::option::Option<unsafe extern "C" fn(pMutex: CK_VOID_PTR) -> CK_RV>;
-#[repr(packed, C)]
+#[cfg_attr(target_os = "macos", repr(C))]
+#[cfg_attr(target_os = "windows", repr(packed, C))]
 #[derive(Debug, Copy)]
 pub struct CK_C_INITIALIZE_ARGS {
     pub CreateMutex: CK_CREATEMUTEX,
@@ -680,7 +689,8 @@ pub type CK_C_CancelFunction =
 pub type CK_C_WaitForSlotEvent = ::std::option::Option<
     unsafe extern "C" fn(flags: CK_FLAGS, pSlot: CK_SLOT_ID_PTR, pRserved: CK_VOID_PTR) -> CK_RV,
 >;
-#[repr(packed, C)]
+#[cfg_attr(target_os = "macos", repr(C))]
+#[cfg_attr(target_os = "windows", repr(packed, C))]
 #[derive(Debug, Copy)]
 pub struct CK_FUNCTION_LIST {
     pub version: CK_VERSION,
