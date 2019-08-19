@@ -11,7 +11,6 @@ macro_rules! try_read_bytes {
 
 const INTEGER: u8 = 0x02;
 const OCTET_STRING: u8 = 0x04;
-const OBJECT_IDENTIFIER: u8 = 0x06;
 const SEQUENCE: u8 = 0x10;
 const CONSTRUCTED: u8 = 0x20;
 
@@ -57,10 +56,6 @@ impl<'a> Sequence<'a> {
 
     pub fn read_octet_string(&mut self) -> Result<&'a [u8], ()> {
         self.contents.read(OCTET_STRING)
-    }
-
-    pub fn read_oid(&mut self) -> Result<&'a [u8], ()> {
-        self.contents.read(OBJECT_IDENTIFIER)
     }
 
     pub fn at_end(&self) -> bool {
