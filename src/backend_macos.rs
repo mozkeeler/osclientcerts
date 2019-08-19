@@ -18,7 +18,10 @@ use core_foundation::error::*;
 use core_foundation::number::*;
 use core_foundation::string::*;
 
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+// Normally we would generate this with a build script, but macos is
+// cross-compiled on linux, and we'd have to figure out e.g. include paths,
+// etc.. This is easier.
+include!("bindings_macos.rs");
 
 use byteorder::{NativeEndian, WriteBytesExt};
 
