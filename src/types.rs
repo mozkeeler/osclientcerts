@@ -142,19 +142,21 @@ impl fmt::Display for CK_ATTRIBUTE {
             CKA_MODULUS => "CKA_MODULUS".to_owned(),
             CKA_EC_PARAMS => "CKA_EC_PARAMS".to_owned(),
             CKA_ALWAYS_AUTHENTICATE => "CKA_ALWAYS_AUTHENTICATE".to_owned(),
-            _ => format!("{:?}", self.type_),
+            _ => format!("{:?}", unsafe { self.type_ }),
         };
         // TODO: this isn't quite what we want to do...
         let value = match self.ulValueLen {
             1 => format!("{}", unsafe { *(self.pValue as *const u8) }),
             4 => format!("0x{:x}", unsafe { *(self.pValue as *const u32) }),
             8 => format!("0x{:x}", unsafe { *(self.pValue as *const u64) }),
-            _ => format!("{:?}", self.pValue),
+            _ => format!("{:?}", unsafe { self.pValue }),
         };
         write!(
             f,
             "CK_ATTRIBUTE {{ type: {}, value: {}, len: {:?} }}",
-            type_, value, self.ulValueLen
+            type_,
+            value,
+            unsafe { self.ulValueLen }
         )
     }
 }
@@ -179,12 +181,14 @@ impl fmt::Display for CK_MECHANISM {
         let mechanism = match self.mechanism {
             CKM_RSA_PKCS => "CKM_RSA_PKCS".to_owned(),
             CKM_ECDSA => "CKM_ECDSA".to_owned(),
-            _ => format!("{}", self.mechanism),
+            _ => format!("{}", unsafe { self.mechanism }),
         };
         write!(
             f,
             "CK_MECHANISM {{ mechanism: {}, value: {:?}, len: {:?} }}",
-            mechanism, self.pParameter, self.ulParameterLen
+            mechanism,
+            unsafe { self.pParameter },
+            unsafe { self.ulParameterLen }
         )
     }
 }
