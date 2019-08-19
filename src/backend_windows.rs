@@ -251,7 +251,6 @@ impl Key {
             return Err(());
         }
         assert!(final_signature_len == signature_len);
-        eprintln!("signature? {:x?}", signature);
         Ok(signature)
     }
 }
@@ -291,7 +290,6 @@ fn cert_from_cert_context(context: &CERT_CONTEXT) -> Cert {
         unsafe { slice::from_raw_parts(context.pbCertEncoded, context.cbCertEncoded as usize) };
     let value = value.to_vec();
     let id = Sha256::digest(&value).to_vec();
-    eprintln!("cert with id {:?}", id);
     let label = id.clone(); // TODO
     let issuer =
         unsafe { slice::from_raw_parts(cert_info.Issuer.pbData, cert_info.Issuer.cbData as usize) };
@@ -331,7 +329,6 @@ fn key_from_cert_context_and_key_handle(
     };
     let id = Sha256::digest(cert_der).to_vec();
     let id = id.to_vec();
-    eprintln!("key with id {:?}", id);
     let cert_info = unsafe { &*cert_context.pCertInfo };
     let mut modulus = None;
     let mut ec_params = None;

@@ -38,7 +38,6 @@ lazy_static! {
 }
 
 extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
-    eprintln!("C_Initialize");
     // Getting the manager initializes our logging, so do it first.
     let manager = IMPL.lock().unwrap();
     debug!("C_Initialize: CKR_OK");
@@ -908,7 +907,6 @@ static FUNCTION_LIST: CK_FUNCTION_LIST = CK_FUNCTION_LIST {
 
 #[no_mangle]
 pub extern "C" fn C_GetFunctionList(ppFunctionList: CK_FUNCTION_LIST_PTR_PTR) -> CK_RV {
-    eprintln!("C_GetFunctionList");
     unsafe {
         *ppFunctionList = &FUNCTION_LIST;
     }
