@@ -454,9 +454,10 @@ pub fn list_objects() -> Vec<Object> {
             {
                 assert!(key_spec == CERT_NCRYPT_KEY_SPEC);
                 assert!(must_free != 0);
-                if let Ok(key) =
-                    key_from_cert_context_and_key_handle(&*cert_context, key_handle as u64)
-                {
+                if let Ok(key) = key_from_cert_context_and_key_handle(
+                    &*cert_context,
+                    key_handle as NCRYPT_KEY_HANDLE,
+                ) {
                     objects.push(Object::Cert(cert_from_cert_context(&*cert_context)));
                     objects.push(Object::Key(key));
                 }
