@@ -4,9 +4,6 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
-#[link(name = "Security", kind = "framework")]
-extern "C" {}
-
 use std::os::raw::c_void;
 
 use core_foundation::array::*;

@@ -1,15 +1,18 @@
 #[cfg(target_os = "windows")]
 use bindgen;
 
-#[cfg(target_os = "windows")]
 use std::env;
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
 
 #[cfg(not(target_os = "windows"))]
 fn main() {
-    // This is a no-op while we figure out how to run this on linux when we're
-    // compiling for macos.
+    if env::var("TARGET")
+        .expect("TARGET unset?")
+        .contains("-apple")
+    {
+        println!("cargo:rustc-link-lib=framework=Security");
+    }
 }
 
 #[cfg(target_os = "windows")]
