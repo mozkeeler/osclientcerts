@@ -4,6 +4,19 @@
 
 use std::fmt;
 
+// On Windows, these structs have to be packed. Accessing members of packed
+// structs can be undefined behavior, so this requires an unsafe block on that
+// platform but not MacOS. Unnecessary unsafe blocks are warnings. These
+// warnings turn into errors when compiled with warnings-as-errors. This macro
+// helps us deal with this situation.
+macro_rules! maybe_unaligned_access {
+    ($e:expr) => {{
+        #[allow(unused_unsafe)]
+        let tmp = unsafe { $e };
+        tmp
+    }};
+}
+
 pub type CK_BYTE = ::std::os::raw::c_uchar;
 pub type CK_CHAR = CK_BYTE;
 pub type CK_UTF8CHAR = CK_BYTE;
@@ -142,21 +155,21 @@ impl fmt::Display for CK_ATTRIBUTE {
             CKA_MODULUS => "CKA_MODULUS".to_owned(),
             CKA_EC_PARAMS => "CKA_EC_PARAMS".to_owned(),
             CKA_ALWAYS_AUTHENTICATE => "CKA_ALWAYS_AUTHENTICATE".to_owned(),
-            _ => format!("{:?}", unsafe { self.type_ }),
+            _ => format!("{:?}", maybe_unaligned_access!(self.type_)),
         };
         // TODO: this isn't quite what we want to do...
         let value = match self.ulValueLen {
             1 => format!("{}", unsafe { *(self.pValue as *const u8) }),
             4 => format!("0x{:x}", unsafe { *(self.pValue as *const u32) }),
             8 => format!("0x{:x}", unsafe { *(self.pValue as *const u64) }),
-            _ => format!("{:?}", unsafe { self.pValue }),
+            _ => format!("{:?}", maybe_unaligned_access!(self.pValue)),
         };
         write!(
             f,
             "CK_ATTRIBUTE {{ type: {}, value: {}, len: {:?} }}",
             type_,
             value,
-            unsafe { self.ulValueLen }
+            maybe_unaligned_access!(self.ulValueLen),
         )
     }
 }
@@ -181,14 +194,14 @@ impl fmt::Display for CK_MECHANISM {
         let mechanism = match self.mechanism {
             CKM_RSA_PKCS => "CKM_RSA_PKCS".to_owned(),
             CKM_ECDSA => "CKM_ECDSA".to_owned(),
-            _ => format!("{}", unsafe { self.mechanism }),
+            _ => format!("{}", maybe_unaligned_access!(self.mechanism)),
         };
         write!(
             f,
             "CK_MECHANISM {{ mechanism: {}, value: {:?}, len: {:?} }}",
             mechanism,
-            unsafe { self.pParameter },
-            unsafe { self.ulParameterLen }
+            maybe_unaligned_access!(self.pParameter),
+            maybe_unaligned_access!(self.ulParameterLen),
         )
     }
 }
