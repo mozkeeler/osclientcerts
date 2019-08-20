@@ -10,7 +10,6 @@ use byteorder::{NativeEndian, WriteBytesExt};
 use sha2::{Digest, Sha256};
 use std::ffi::{CStr, CString};
 use std::ops::Deref;
-use std::os::raw::c_void;
 use std::slice;
 use winapi::shared::bcrypt::*;
 use winapi::um::ncrypt::*;
@@ -206,7 +205,7 @@ impl Key {
             ),
         };
         let params_ptr = if let Some(mut params) = params {
-            (&mut params as *mut BCRYPT_PKCS1_PADDING_INFO) as *mut c_void
+            (&mut params as *mut BCRYPT_PKCS1_PADDING_INFO) as *mut std::os::raw::c_void
         } else {
             std::ptr::null_mut()
         };
@@ -421,7 +420,7 @@ pub fn list_objects() -> Vec<Object> {
             0,
             0,
             location_flags,
-            store_name.into_raw() as *const std::ffi::c_void,
+            store_name.into_raw() as *const winapi::ctypes::c_void,
         ));
         if store.is_null() {
             warn!("CertOpenStore failed");
