@@ -12,6 +12,7 @@ pub struct Manager {
     searches: BTreeMap<CK_SESSION_HANDLE, Vec<CK_OBJECT_HANDLE>>,
     signs: BTreeMap<CK_SESSION_HANDLE, CK_OBJECT_HANDLE>,
     objects: BTreeMap<CK_OBJECT_HANDLE, Object>,
+    ids: BTreeSet<Vec<u8>>,
     next_session: CK_SESSION_HANDLE,
     next_handle: CK_OBJECT_HANDLE,
 }
@@ -23,6 +24,7 @@ impl Manager {
             searches: BTreeMap::new(),
             signs: BTreeMap::new(),
             objects: BTreeMap::new(),
+            ids: BTreeSet::new(),
             next_session: 1,
             next_handle: 1,
         }
@@ -31,6 +33,16 @@ impl Manager {
     pub fn open_session(&mut self) -> CK_SESSION_HANDLE {
         let objects = list_objects();
         for object in objects {
+            match &object {
+                Object::Cert(cert) => {
+                    if self.ids.contains(cert.id()) {
+                        continue;
+                    }
+                    self.ids.insert(cert.id().to_vec());
+                }
+                Object::Key(_) => {} // We assume the backend is well-behaved. We could change how
+                                     // `list_objects` works to enforce that they're always given as pairs?
+            }
             let handle = self.get_next_handle();
             self.objects.insert(handle, object);
         }

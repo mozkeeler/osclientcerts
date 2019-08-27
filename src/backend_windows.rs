@@ -72,7 +72,7 @@ impl Cert {
         &self.token
     }
 
-    fn id(&self) -> &[u8] {
+    pub fn id(&self) -> &[u8] {
         &self.id
     }
 
