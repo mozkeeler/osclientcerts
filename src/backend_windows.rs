@@ -467,55 +467,50 @@ impl CertStore {
 
 pub fn list_objects() -> Vec<Object> {
     let mut objects = Vec::new();
-    unsafe {
-        //let location_flags = CERT_SYSTEM_STORE_LOCAL_MACHINE
-        let location_flags = CERT_SYSTEM_STORE_CURRENT_USER // TODO: loop over multiple locations
-            | CERT_STORE_OPEN_EXISTING_FLAG
-            | CERT_STORE_READONLY_FLAG;
-        let store_name = CString::new("My").expect("CString::new failed?"); // TODO: more locations?
-                                                                            // TODO: raii types
-                                                                            // TODO: one of these 0s is supposed to be X509_ASN_ENCODING I think
-        let store = CertStore::new(CertOpenStore(
+    let location_flags = CERT_SYSTEM_STORE_CURRENT_USER // TODO: loop over multiple locations
+        | CERT_STORE_OPEN_EXISTING_FLAG
+        | CERT_STORE_READONLY_FLAG;
+    let store_name = CString::new("My").expect("CString::new failed?"); // TODO: more locations?
+                                                                        // TODO: raii types
+                                                                        // TODO: one of these 0s is supposed to be X509_ASN_ENCODING I think
+    let store = CertStore::new(unsafe {
+        CertOpenStore(
             CERT_STORE_PROV_SYSTEM_REGISTRY_A,
             0,
             0,
             location_flags,
             store_name.into_raw() as *const winapi::ctypes::c_void,
-        ));
-        if store.is_null() {
-            warn!("CertOpenStore failed");
-            return objects;
-        }
-        let mut cert_context: PCCERT_CONTEXT = std::ptr::null_mut();
-        cert_context = CertFindCertificateInStore(
-            *store,
-            X509_ASN_ENCODING,
-            CERT_FIND_HAS_PRIVATE_KEY,
-            CERT_FIND_ANY,
-            std::ptr::null_mut(),
-            cert_context,
-        );
-        while !cert_context.is_null() {
-            let cert = match Cert::new(cert_context) {
-                Ok(cert) => cert,
-                Err(()) => continue,
-            };
-            let key = match Key::new(cert_context) {
-                Ok(key) => key,
-                Err(()) => continue,
-            };
-            objects.push(Object::Cert(cert));
-            objects.push(Object::Key(key));
-
-            cert_context = CertFindCertificateInStore(
+        )
+    });
+    if store.is_null() {
+        warn!("CertOpenStore failed");
+        return objects;
+    }
+    let mut cert_context: PCCERT_CONTEXT = std::ptr::null_mut();
+    loop {
+        cert_context = unsafe {
+            CertFindCertificateInStore(
                 *store,
                 X509_ASN_ENCODING,
                 CERT_FIND_HAS_PRIVATE_KEY,
                 CERT_FIND_ANY,
                 std::ptr::null_mut(),
                 cert_context,
-            );
+            )
+        };
+        if cert_context.is_null() {
+            break;
         }
+        let cert = match Cert::new(cert_context) {
+            Ok(cert) => cert,
+            Err(()) => continue,
+        };
+        let key = match Key::new(cert_context) {
+            Ok(key) => key,
+            Err(()) => continue,
+        };
+        objects.push(Object::Cert(cert));
+        objects.push(Object::Key(key));
     }
     objects
 }
