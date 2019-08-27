@@ -2,6 +2,8 @@
 #![allow(non_snake_case)]
 #![allow(dead_code)]
 
+use byteorder::{NativeEndian, WriteBytesExt};
+
 use std::fmt;
 
 // On Windows, these structs have to be packed. Accessing members of packed
@@ -787,6 +789,17 @@ impl Clone for CK_FUNCTION_LIST {
 }
 pub type CK_FUNCTION_LIST_PTR = *const CK_FUNCTION_LIST;
 pub type CK_FUNCTION_LIST_PTR_PTR = *mut CK_FUNCTION_LIST_PTR;
+
+// This is a helper function to take a value and lay it out in memory how
+// PKCS#11 is expecting it.
+pub fn serialize_uint<T: Into<u64>>(value: T) -> Vec<u8> {
+    let value_size = std::mem::size_of::<T>();
+    let mut value_buf = Vec::with_capacity(value_size);
+    match value_buf.write_uint::<NativeEndian>(value.into(), value_size) {
+        Ok(()) => value_buf,
+        Err(e) => panic!("error serializing value: {}", e),
+    }
+}
 
 pub const CKR_OK: CK_RV = 0x0;
 pub const CKR_GENERAL_ERROR: CK_RV = 0x5;

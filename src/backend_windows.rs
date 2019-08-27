@@ -6,7 +6,6 @@
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-use byteorder::{NativeEndian, WriteBytesExt};
 use sha2::{Digest, Sha256};
 use std::ffi::{CStr, CString};
 use std::ops::Deref;
@@ -513,13 +512,4 @@ pub fn list_objects() -> Vec<Object> {
         objects.push(Object::Key(key));
     }
     objects
-}
-
-fn serialize_uint<T: Into<u64>>(value: T) -> Vec<u8> {
-    let value_size = std::mem::size_of::<T>();
-    let mut value_buf = Vec::with_capacity(value_size);
-    match value_buf.write_uint::<NativeEndian>(value.into(), value_size) {
-        Ok(()) => value_buf,
-        Err(e) => panic!("error serializing value: {}", e),
-    }
 }

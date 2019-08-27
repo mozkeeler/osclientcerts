@@ -20,8 +20,6 @@ use core_foundation::string::*;
 // etc.. This is easier.
 include!("bindings_macos.rs");
 
-use byteorder::{NativeEndian, WriteBytesExt};
-
 use crate::der::*;
 use crate::types::*;
 
@@ -472,15 +470,6 @@ pub fn list_objects() -> Vec<Object> {
         }
     }
     objects
-}
-
-fn serialize_uint<T: Into<u64>>(value: T) -> Vec<u8> {
-    let value_size = std::mem::size_of::<T>();
-    let mut value_buf = Vec::with_capacity(value_size);
-    match value_buf.write_uint::<NativeEndian>(value.into(), value_size) {
-        Ok(()) => value_buf,
-        Err(e) => panic!("error serializing value: {}", e),
-    }
 }
 
 fn get_key_attribute<T: TCFType + Clone>(key: &SecKey, attr: CFStringRef) -> Result<T, ()> {
