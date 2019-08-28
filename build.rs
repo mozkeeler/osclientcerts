@@ -7,19 +7,6 @@ use std::path::PathBuf;
 
 #[cfg(not(target_os = "windows"))]
 fn main() {
-    if let Ok(macos_sdk_dir) = env::var("MACOS_SDK_DIR") {
-        println!("cargo:rustc-link-search={}", macos_sdk_dir);
-        println!("cargo:rustc-link-search={}/System", macos_sdk_dir);
-        println!("cargo:rustc-link-search={}/System/Library", macos_sdk_dir);
-        println!(
-            "cargo:rustc-link-search={}/System/Library/Frameworks",
-            macos_sdk_dir
-        );
-        println!(
-            "cargo:rustc-link-search={}/System/Library/Frameworks/Security.framework",
-            macos_sdk_dir
-        );
-    };
     if env::var("TARGET")
         .expect("TARGET unset?")
         .contains("-apple")
