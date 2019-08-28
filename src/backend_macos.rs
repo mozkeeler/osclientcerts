@@ -69,11 +69,11 @@ impl Cert {
         let status =
             unsafe { SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate) };
         if status != errSecSuccess {
-            debug!("SecIdentityCopyCertificate failed: {}", status);
+            error!("SecIdentityCopyCertificate failed: {}", status);
             return Err(());
         }
         if certificate.is_null() {
-            debug!("couldn't get certificate from identity?");
+            error!("couldn't get certificate from identity?");
             return Err(());
         }
         let certificate = unsafe { SecCertificate::wrap_under_create_rule(certificate) };
@@ -211,17 +211,17 @@ impl Key {
         let status =
             unsafe { SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate) };
         if status != errSecSuccess {
-            debug!("SecIdentityCopyCertificate failed: {}", status);
+            error!("SecIdentityCopyCertificate failed: {}", status);
             return Err(());
         }
         if certificate.is_null() {
-            debug!("couldn't get certificate from identity?");
+            error!("couldn't get certificate from identity?");
             return Err(());
         }
         let certificate = unsafe { SecCertificate::wrap_under_create_rule(certificate) };
         let key = unsafe { SecCertificateCopyKey(certificate.as_concrete_TypeRef()) };
         if key.is_null() {
-            debug!("couldn't get key from certificate?");
+            error!("couldn't get key from certificate?");
             return Err(());
         }
         let key = unsafe { SecKey::wrap_under_create_rule(key) };
@@ -261,13 +261,13 @@ impl Key {
                     Some(384) => ec_params = Some(OID_BYTES_SECP384R1.to_vec()),
                     Some(521) => ec_params = Some(OID_BYTES_SECP521R1.to_vec()),
                     _ => {
-                        debug!("unsupported EC key");
+                        error!("unsupported EC key");
                         return Err(());
                     }
                 }
                 (KeyType::EC, CKK_EC)
             } else {
-                debug!("unsupported key type");
+                error!("unsupported key type");
                 return Err(());
             };
 
@@ -383,11 +383,11 @@ impl Key {
             let mut key = std::ptr::null();
             let status = SecIdentityCopyPrivateKey(self.identity.0.as_concrete_TypeRef(), &mut key);
             if status != errSecSuccess {
-                debug!("SecIdentityCopyPrivateKey failed: {}", status);
+                error!("SecIdentityCopyPrivateKey failed: {}", status);
                 return Err(());
             }
             if key.is_null() {
-                debug!("SecIdentityCopyPrivateKey didn't set key?");
+                error!("SecIdentityCopyPrivateKey didn't set key?");
                 return Err(());
             }
             SecKey::wrap_under_create_rule(key)
@@ -396,7 +396,7 @@ impl Key {
             (&KeyType::EC, 32) => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA256 },
             (&KeyType::RSA, 32) => unsafe { kSecKeyAlgorithmRSASignatureDigestPKCS1v15SHA256 },
             (typ, len) => {
-                debug!("unsupported key type/hash combo: {:?} {}", typ, len);
+                error!("unsupported key type/hash combo: {:?} {}", typ, len);
                 return Err(());
             }
         };
@@ -410,7 +410,7 @@ impl Key {
                 &mut error,
             );
             if result.is_null() {
-                debug!("SecKeyCreateSignature failed");
+                error!("SecKeyCreateSignature failed");
                 let error = CFError::wrap_under_create_rule(error);
                 error.show(); // TODO: log contents using logging system, not stderr
                 return Err(());
@@ -500,7 +500,7 @@ fn list_identities() -> Option<Vec<(Cert, Key)>> {
         let mut result = std::ptr::null();
         let status = SecItemCopyMatching(dict.as_CFTypeRef() as CFDictionaryRef, &mut result);
         if status != errSecSuccess {
-            debug!("SecItemCopyMatching failed: {}", status);
+            error!("SecItemCopyMatching failed: {}", status);
             return None;
         }
         if result.is_null() {

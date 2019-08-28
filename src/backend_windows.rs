@@ -386,7 +386,7 @@ impl Key {
         };
         // 0 is "ERROR_SUCCESS" (but "ERROR_SUCCESS" is unsigned, whereas SECURITY_STATUS is signed)
         if status != 0 {
-            debug!("NCryptSignHash failed (first time), {}", status);
+            error!("NCryptSignHash failed (first time), {}", status);
             // TODO: stringify/log error?
             return Err(());
         }
@@ -406,7 +406,7 @@ impl Key {
             )
         };
         if status != 0 {
-            debug!("NCryptSignHash failed (second time) {}", status);
+            error!("NCryptSignHash failed (second time) {}", status);
             // TODO: stringify/log error?
             return Err(());
         }
