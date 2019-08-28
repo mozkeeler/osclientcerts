@@ -71,7 +71,7 @@ extern "C" fn C_GetSlotList(
     pulCount: CK_ULONG_PTR,
 ) -> CK_RV {
     if pulCount.is_null() {
-        debug!("C_GetSlotList: CKR_ARGUMENTS_BAD");
+        error!("C_GetSlotList: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
     if pSlotList.is_null() {
@@ -81,7 +81,7 @@ extern "C" fn C_GetSlotList(
     } else {
         let slotCount = unsafe { *pulCount };
         if slotCount < 1 {
-            debug!("C_GetSlotList: CKR_BUFFER_TOO_SMALL");
+            error!("C_GetSlotList: CKR_BUFFER_TOO_SMALL");
             return CKR_BUFFER_TOO_SMALL;
         }
         unsafe {
@@ -94,7 +94,7 @@ extern "C" fn C_GetSlotList(
 
 extern "C" fn C_GetSlotInfo(slotID: CK_SLOT_ID, pInfo: CK_SLOT_INFO_PTR) -> CK_RV {
     if slotID != SLOT_ID || pInfo.is_null() {
-        debug!("C_GetSlotInfo: CKR_ARGUMENTS_BAD");
+        error!("C_GetSlotInfo: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
     let mut slot_info = CK_SLOT_INFO::default();
@@ -110,7 +110,7 @@ extern "C" fn C_GetSlotInfo(slotID: CK_SLOT_ID, pInfo: CK_SLOT_INFO_PTR) -> CK_R
 
 extern "C" fn C_GetTokenInfo(slotID: CK_SLOT_ID, pInfo: CK_TOKEN_INFO_PTR) -> CK_RV {
     if slotID != SLOT_ID || pInfo.is_null() {
-        debug!("C_GetTokenInfo: CKR_ARGUMENTS_BAD");
+        error!("C_GetTokenInfo: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
     let mut token_info = CK_TOKEN_INFO::default();
@@ -130,7 +130,7 @@ extern "C" fn C_GetMechanismList(
     pulCount: CK_ULONG_PTR,
 ) -> CK_RV {
     if slotID != SLOT_ID || pulCount.is_null() {
-        debug!("C_GetMechanismList: CKR_ARGUMENTS_BAD");
+        error!("C_GetMechanismList: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
     if pMechanismList.is_null() {
@@ -147,7 +147,7 @@ extern "C" fn C_GetMechanismInfo(
     type_: CK_MECHANISM_TYPE,
     pInfo: CK_MECHANISM_INFO_PTR,
 ) -> CK_RV {
-    debug!("C_GetMechanismInfo: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_GetMechanismInfo: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -157,7 +157,7 @@ extern "C" fn C_InitToken(
     ulPinLen: CK_ULONG,
     pLabel: CK_UTF8CHAR_PTR,
 ) -> CK_RV {
-    debug!("C_InitToken: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_InitToken: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -166,7 +166,7 @@ extern "C" fn C_InitPIN(
     pPin: CK_UTF8CHAR_PTR,
     ulPinLen: CK_ULONG,
 ) -> CK_RV {
-    debug!("C_InitPIN: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_InitPIN: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -177,7 +177,7 @@ extern "C" fn C_SetPIN(
     pNewPin: CK_UTF8CHAR_PTR,
     ulNewLen: CK_ULONG,
 ) -> CK_RV {
-    debug!("C_SetPIN: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_SetPIN: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -189,7 +189,7 @@ extern "C" fn C_OpenSession(
     phSession: CK_SESSION_HANDLE_PTR,
 ) -> CK_RV {
     if slotID != SLOT_ID || phSession.is_null() {
-        debug!("C_OpenSession: CKR_ARGUMENTS_BAD");
+        error!("C_OpenSession: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
     let mut manager = IMPL.lock().unwrap();
@@ -202,13 +202,13 @@ extern "C" fn C_OpenSession(
 }
 
 extern "C" fn C_CloseSession(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    debug!("C_CloseSession: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_CloseSession: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_CloseAllSessions(slotID: CK_SLOT_ID) -> CK_RV {
     if slotID != SLOT_ID {
-        debug!("C_CloseAllSessions: CKR_ARGUMENTS_BAD");
+        error!("C_CloseAllSessions: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
     let mut manager = IMPL.lock().unwrap();
@@ -218,7 +218,7 @@ extern "C" fn C_CloseAllSessions(slotID: CK_SLOT_ID) -> CK_RV {
 }
 
 extern "C" fn C_GetSessionInfo(hSession: CK_SESSION_HANDLE, pInfo: CK_SESSION_INFO_PTR) -> CK_RV {
-    debug!("C_GetSessionInfo: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_GetSessionInfo: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -227,7 +227,7 @@ extern "C" fn C_GetOperationState(
     pOperationState: CK_BYTE_PTR,
     pulOperationStateLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_GetOperationState: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_GetOperationState: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -238,7 +238,7 @@ extern "C" fn C_SetOperationState(
     hEncryptionKey: CK_OBJECT_HANDLE,
     hAuthenticationKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    debug!("C_SetOperationState: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_SetOperationState: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -248,12 +248,12 @@ extern "C" fn C_Login(
     pPin: CK_UTF8CHAR_PTR,
     ulPinLen: CK_ULONG,
 ) -> CK_RV {
-    debug!("C_Login: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_Login: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_Logout(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    debug!("C_Logout: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_Logout: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -263,7 +263,7 @@ extern "C" fn C_CreateObject(
     ulCount: CK_ULONG,
     phObject: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    debug!("C_CreateObject: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_CreateObject: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -274,12 +274,12 @@ extern "C" fn C_CopyObject(
     ulCount: CK_ULONG,
     phNewObject: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    debug!("C_CopyObject: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_CopyObject: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_DestroyObject(hSession: CK_SESSION_HANDLE, hObject: CK_OBJECT_HANDLE) -> CK_RV {
-    debug!("C_DestroyObject: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_DestroyObject: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -288,7 +288,7 @@ extern "C" fn C_GetObjectSize(
     hObject: CK_OBJECT_HANDLE,
     pulSize: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_GetObjectSize: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_GetObjectSize: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -299,15 +299,15 @@ extern "C" fn C_GetAttributeValue(
     ulCount: CK_ULONG,
 ) -> CK_RV {
     if pTemplate.is_null() {
-        debug!("C_GetAttributeValue: CKR_ARGUMENTS_BAD");
+        error!("C_GetAttributeValue: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    // TODO: check hSession
+    // TODO: check hSession (do we actually need to?)
     let mut manager = IMPL.lock().unwrap();
     let object = match manager.get_object(hObject) {
         Ok(object) => object,
         Err(()) => {
-            debug!("C_GetAttributeValue: CKR_ARGUMENTS_BAD");
+            error!("C_GetAttributeValue: CKR_ARGUMENTS_BAD");
             return CKR_ARGUMENTS_BAD;
         }
     };
@@ -317,14 +317,13 @@ extern "C" fn C_GetAttributeValue(
             if attr.pValue.is_null() {
                 attr.ulValueLen = attr_value.len() as CK_ULONG;
             } else {
+                let ptr: *mut u8 = attr.pValue as *mut u8;
+                if attr_value.len() != attr.ulValueLen as usize {
+                    error!("C_GetAttributeValue: incorrect attr size");
+                    return CKR_ARGUMENTS_BAD;
+                }
                 unsafe {
-                    let ptr: *mut u8 = attr.pValue as *mut u8;
-                    // TODO: length check attr_value
-                    std::ptr::copy_nonoverlapping(
-                        attr_value.as_ptr(),
-                        ptr,
-                        attr.ulValueLen as usize,
-                    );
+                    std::ptr::copy_nonoverlapping(attr_value.as_ptr(), ptr, attr_value.len());
                 }
             }
         } else {
@@ -341,7 +340,7 @@ extern "C" fn C_SetAttributeValue(
     pTemplate: CK_ATTRIBUTE_PTR,
     ulCount: CK_ULONG,
 ) -> CK_RV {
-    debug!("C_SetAttributeValue: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_SetAttributeValue: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -351,10 +350,11 @@ extern "C" fn C_FindObjectsInit(
     ulCount: CK_ULONG,
 ) -> CK_RV {
     if pTemplate.is_null() {
-        debug!("C_FindObjectsInit: CKR_ARGUMENTS_BAD");
+        error!("C_FindObjectsInit: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
     let mut attrs = Vec::new();
+    debug!("C_FindObjectsInit:");
     for i in 0..ulCount {
         let attr = unsafe { &*pTemplate.offset(i as isize) };
         debug!("  {}", attr);
@@ -367,7 +367,7 @@ extern "C" fn C_FindObjectsInit(
     match manager.start_search(hSession, &attrs) {
         Ok(()) => {}
         Err(()) => {
-            debug!("C_FindObjectsInit: CKR_ARGUMENTS_BAD");
+            error!("C_FindObjectsInit: CKR_ARGUMENTS_BAD");
             return CKR_ARGUMENTS_BAD;
         }
     }
@@ -382,14 +382,14 @@ extern "C" fn C_FindObjects(
     pulObjectCount: CK_ULONG_PTR,
 ) -> CK_RV {
     if phObject.is_null() || pulObjectCount.is_null() {
-        debug!("C_FindObjects: CKR_ARGUMENTS_BAD");
+        error!("C_FindObjects: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
     let manager = IMPL.lock().unwrap();
     let handles = match manager.search(hSession) {
         Ok(handles) => handles,
         Err(()) => {
-            debug!("C_FindObjects: CKR_ARGUMENTS_BAD");
+            error!("C_FindObjects: CKR_ARGUMENTS_BAD");
             return CKR_ARGUMENTS_BAD;
         }
     };
@@ -421,7 +421,7 @@ extern "C" fn C_EncryptInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    debug!("C_EncryptInit: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_EncryptInit: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -432,7 +432,7 @@ extern "C" fn C_Encrypt(
     pEncryptedData: CK_BYTE_PTR,
     pulEncryptedDataLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_Encrypt: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_Encrypt: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -443,7 +443,7 @@ extern "C" fn C_EncryptUpdate(
     pEncryptedPart: CK_BYTE_PTR,
     pulEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_EncryptUpdate: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_EncryptUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -452,7 +452,7 @@ extern "C" fn C_EncryptFinal(
     pLastEncryptedPart: CK_BYTE_PTR,
     pulLastEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_EncryptFinal: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_EncryptFinal: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -461,7 +461,7 @@ extern "C" fn C_DecryptInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    debug!("C_DecryptInit: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_DecryptInit: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -472,7 +472,7 @@ extern "C" fn C_Decrypt(
     pData: CK_BYTE_PTR,
     pulDataLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_Decrypt: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_Decrypt: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -483,7 +483,7 @@ extern "C" fn C_DecryptUpdate(
     pPart: CK_BYTE_PTR,
     pulPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_DecryptUpdate: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_DecryptUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -492,12 +492,12 @@ extern "C" fn C_DecryptFinal(
     pLastPart: CK_BYTE_PTR,
     pulLastPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_DecryptFinal: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_DecryptFinal: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_DigestInit(hSession: CK_SESSION_HANDLE, pMechanism: CK_MECHANISM_PTR) -> CK_RV {
-    debug!("C_DigestInit: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_DigestInit: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -508,7 +508,7 @@ extern "C" fn C_Digest(
     pDigest: CK_BYTE_PTR,
     pulDigestLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_Digest: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_Digest: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -517,12 +517,12 @@ extern "C" fn C_DigestUpdate(
     pPart: CK_BYTE_PTR,
     ulPartLen: CK_ULONG,
 ) -> CK_RV {
-    debug!("C_DigestUpdate: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_DigestUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_DigestKey(hSession: CK_SESSION_HANDLE, hKey: CK_OBJECT_HANDLE) -> CK_RV {
-    debug!("C_DigestKey: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_DigestKey: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -531,7 +531,7 @@ extern "C" fn C_DigestFinal(
     pDigest: CK_BYTE_PTR,
     pulDigestLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_DigestFinal: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_DigestFinal: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -541,7 +541,7 @@ extern "C" fn C_SignInit(
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
     if pMechanism.is_null() {
-        debug!("C_SignInit: CKR_ARGUMENTS_BAD");
+        error!("C_SignInit: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
     // pMechanism generally appears to be empty.
@@ -549,7 +549,7 @@ extern "C" fn C_SignInit(
     match manager.start_sign(hSession, hKey) {
         Ok(()) => {}
         Err(()) => {
-            debug!("C_SignInit: CKR_GENERAL_ERROR");
+            error!("C_SignInit: CKR_GENERAL_ERROR");
             return CKR_GENERAL_ERROR;
         }
     };
@@ -567,7 +567,7 @@ extern "C" fn C_Sign(
     // TODO: we seem to always pass in allocated memory - do we need to handle
     // the case where we're called to see what the length will be first?
     if pData.is_null() || pSignature.is_null() || pulSignatureLen.is_null() {
-        debug!("C_Sign: CKR_ARGUMENTS_BAD");
+        error!("C_Sign: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
     let manager = IMPL.lock().unwrap();
@@ -576,7 +576,7 @@ extern "C" fn C_Sign(
         Ok(signature) => {
             let signature_capacity = unsafe { *pulSignatureLen } as usize;
             if signature_capacity < signature.len() {
-                debug!("C_Sign: CKR_ARGUMENTS_BAD");
+                error!("C_Sign: CKR_ARGUMENTS_BAD");
                 return CKR_ARGUMENTS_BAD;
             }
             let ptr: *mut u8 = pSignature as *mut u8;
@@ -585,7 +585,7 @@ extern "C" fn C_Sign(
             }
         }
         Err(()) => {
-            debug!("C_Sign: CKR_GENERAL_ERROR");
+            error!("C_Sign: CKR_GENERAL_ERROR");
             return CKR_GENERAL_ERROR;
         }
     };
@@ -598,7 +598,7 @@ extern "C" fn C_SignUpdate(
     pPart: CK_BYTE_PTR,
     ulPartLen: CK_ULONG,
 ) -> CK_RV {
-    debug!("C_SignUpdate: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_SignUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -607,7 +607,7 @@ extern "C" fn C_SignFinal(
     pSignature: CK_BYTE_PTR,
     pulSignatureLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_SignFinal: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_SignFinal: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -616,7 +616,7 @@ extern "C" fn C_SignRecoverInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    debug!("C_SignRecoverInit: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_SignRecoverInit: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -627,7 +627,7 @@ extern "C" fn C_SignRecover(
     pSignature: CK_BYTE_PTR,
     pulSignatureLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_SignRecover: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_SignRecover: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -636,7 +636,7 @@ extern "C" fn C_VerifyInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    debug!("C_VerifyInit: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_VerifyInit: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -647,7 +647,7 @@ extern "C" fn C_Verify(
     pSignature: CK_BYTE_PTR,
     ulSignatureLen: CK_ULONG,
 ) -> CK_RV {
-    debug!("C_Verify: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_Verify: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -656,7 +656,7 @@ extern "C" fn C_VerifyUpdate(
     pPart: CK_BYTE_PTR,
     ulPartLen: CK_ULONG,
 ) -> CK_RV {
-    debug!("C_VerifyUpdate: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_VerifyUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -665,7 +665,7 @@ extern "C" fn C_VerifyFinal(
     pSignature: CK_BYTE_PTR,
     ulSignatureLen: CK_ULONG,
 ) -> CK_RV {
-    debug!("C_VerifyFinal: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_VerifyFinal: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -674,7 +674,7 @@ extern "C" fn C_VerifyRecoverInit(
     pMechanism: CK_MECHANISM_PTR,
     hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
-    debug!("C_VerifyRecoverInit: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_VerifyRecoverInit: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -685,7 +685,7 @@ extern "C" fn C_VerifyRecover(
     pData: CK_BYTE_PTR,
     pulDataLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_VerifyRecover: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_VerifyRecover: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -696,7 +696,7 @@ extern "C" fn C_DigestEncryptUpdate(
     pEncryptedPart: CK_BYTE_PTR,
     pulEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_DigestEncryptUpdate: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_DigestEncryptUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -707,7 +707,7 @@ extern "C" fn C_DecryptDigestUpdate(
     pPart: CK_BYTE_PTR,
     pulPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_DecryptDigestUpdate: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_DecryptDigestUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -718,7 +718,7 @@ extern "C" fn C_SignEncryptUpdate(
     pEncryptedPart: CK_BYTE_PTR,
     pulEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_SignEncryptUpdate: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_SignEncryptUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -729,7 +729,7 @@ extern "C" fn C_DecryptVerifyUpdate(
     pPart: CK_BYTE_PTR,
     pulPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_DecryptVerifyUpdate: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_DecryptVerifyUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -740,7 +740,7 @@ extern "C" fn C_GenerateKey(
     ulCount: CK_ULONG,
     phKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    debug!("C_GenerateKey: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_GenerateKey: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -754,7 +754,7 @@ extern "C" fn C_GenerateKeyPair(
     phPublicKey: CK_OBJECT_HANDLE_PTR,
     phPrivateKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    debug!("C_GenerateKeyPair: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_GenerateKeyPair: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -766,7 +766,7 @@ extern "C" fn C_WrapKey(
     pWrappedKey: CK_BYTE_PTR,
     pulWrappedKeyLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    debug!("C_WrapKey: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_WrapKey: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -780,7 +780,7 @@ extern "C" fn C_UnwrapKey(
     ulAttributeCount: CK_ULONG,
     phKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    debug!("C_UnwrapKey: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_UnwrapKey: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -792,7 +792,7 @@ extern "C" fn C_DeriveKey(
     ulAttributeCount: CK_ULONG,
     phKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
-    debug!("C_DeriveKey: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_DeriveKey: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -801,7 +801,7 @@ extern "C" fn C_SeedRandom(
     pSeed: CK_BYTE_PTR,
     ulSeedLen: CK_ULONG,
 ) -> CK_RV {
-    debug!("C_SeedRandom: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_SeedRandom: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -810,17 +810,17 @@ extern "C" fn C_GenerateRandom(
     RandomData: CK_BYTE_PTR,
     ulRandomLen: CK_ULONG,
 ) -> CK_RV {
-    debug!("C_GenerateRandom: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_GenerateRandom: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_GetFunctionStatus(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    debug!("C_GetFunctionStatus: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_GetFunctionStatus: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_CancelFunction(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    debug!("C_CancelFunction: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_CancelFunction: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
@@ -829,7 +829,7 @@ extern "C" fn C_WaitForSlotEvent(
     pSlot: CK_SLOT_ID_PTR,
     pRserved: CK_VOID_PTR,
 ) -> CK_RV {
-    debug!("C_WaitForSlotEvent: CKR_FUNCTION_NOT_SUPPORTED");
+    error!("C_WaitForSlotEvent: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
