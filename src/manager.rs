@@ -19,7 +19,7 @@ pub struct Manager {
 
 impl Manager {
     pub fn new() -> Manager {
-        Manager {
+        let mut manager = Manager {
             sessions: BTreeSet::new(),
             searches: BTreeMap::new(),
             signs: BTreeMap::new(),
@@ -27,10 +27,12 @@ impl Manager {
             ids: BTreeSet::new(),
             next_session: 1,
             next_handle: 1,
-        }
+        };
+        manager.find_new_objects();
+        manager
     }
 
-    pub fn open_session(&mut self) -> CK_SESSION_HANDLE {
+    fn find_new_objects(&mut self) {
         let objects = list_objects();
         for object in objects {
             match &object {
@@ -46,6 +48,10 @@ impl Manager {
             let handle = self.get_next_handle();
             self.objects.insert(handle, object);
         }
+    }
+
+    pub fn open_session(&mut self) -> CK_SESSION_HANDLE {
+        self.find_new_objects();
         let next_session = self.next_session;
         self.next_session += 1;
         self.sessions.insert(next_session);
