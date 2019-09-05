@@ -496,7 +496,7 @@ extern "C" {
 }
 pub type SecKeyAlgorithm = CFStringRef;
 extern "C" {
-    pub static kSecKeyAlgorithmRSASignatureDigestPKCS1v15SHA256: SecKeyAlgorithm;
+    pub static kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw: SecKeyAlgorithm;
 }
 extern "C" {
     pub static kSecKeyAlgorithmECDSASignatureDigestX962SHA256: SecKeyAlgorithm;

@@ -359,26 +359,6 @@ impl Key {
 
     // The input data is a hash. What algorithm we use depends on the size of the hash.
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, ()> {
-        let data = match self.key_type_enum {
-            KeyType::EC => data,
-            KeyType::RSA => {
-                // In this case, `data` will be:
-                // SEQUENCE {
-                //   SEQUENCE {
-                //     OID (hash)
-                //     params (null?)
-                //   }
-                //   OCTET STRING (the hash to sign)
-                // }
-                let mut sequence = Sequence::new(data)?;
-                let hash_algorithm = sequence.read_sequence()?; // TODO: actually inspect/validate this?
-                let hash = sequence.read_octet_string()?;
-                if !sequence.at_end() {
-                    return Err(());
-                }
-                hash
-            }
-        };
         let key = unsafe {
             let mut key = std::ptr::null();
             let status = SecIdentityCopyPrivateKey(self.identity.0.as_concrete_TypeRef(), &mut key);
@@ -394,7 +374,7 @@ impl Key {
         };
         let signing_algorithm = match (&self.key_type_enum, data.len()) {
             (&KeyType::EC, 32) => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA256 },
-            (&KeyType::RSA, 32) => unsafe { kSecKeyAlgorithmRSASignatureDigestPKCS1v15SHA256 },
+            (&KeyType::RSA, _) => unsafe { kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw },
             (typ, len) => {
                 error!("unsupported key type/hash combo: {:?} {}", typ, len);
                 return Err(());
