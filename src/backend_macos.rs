@@ -372,13 +372,9 @@ impl Key {
             }
             SecKey::wrap_under_create_rule(key)
         };
-        let signing_algorithm = match (&self.key_type_enum, data.len()) {
-            (&KeyType::EC, 32) => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA256 },
-            (&KeyType::RSA, _) => unsafe { kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw },
-            (typ, len) => {
-                error!("unsupported key type/hash combo: {:?} {}", typ, len);
-                return Err(());
-            }
+        let signing_algorithm = match &self.key_type_enum {
+            &KeyType::EC => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962 },
+            &KeyType::RSA => unsafe { kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw },
         };
         let data = CFData::from_buffer(data);
         let signature = unsafe {

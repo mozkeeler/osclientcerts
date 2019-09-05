@@ -499,7 +499,7 @@ extern "C" {
     pub static kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw: SecKeyAlgorithm;
 }
 extern "C" {
-    pub static kSecKeyAlgorithmECDSASignatureDigestX962SHA256: SecKeyAlgorithm;
+    pub static kSecKeyAlgorithmECDSASignatureDigestX962: SecKeyAlgorithm;
 }
 extern "C" {
     pub fn SecKeyCreateSignature(
