@@ -58,6 +58,14 @@ impl Manager {
         next_session
     }
 
+    pub fn close_session(&mut self, session: CK_SESSION_HANDLE) -> Result<(), ()> {
+        if self.sessions.remove(&session) {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
     pub fn close_all_sessions(&mut self) {
         self.sessions.clear();
     }

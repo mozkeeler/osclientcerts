@@ -202,8 +202,13 @@ extern "C" fn C_OpenSession(
 }
 
 extern "C" fn C_CloseSession(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    error!("C_CloseSession: CKR_FUNCTION_NOT_SUPPORTED");
-    CKR_FUNCTION_NOT_SUPPORTED
+    let mut manager = IMPL.lock().unwrap();
+    if manager.close_session(hSession).is_err() {
+        error!("C_CloseSession: CKR_SESSION_HANDLE_INVALID");
+        return CKR_SESSION_HANDLE_INVALID;
+    }
+    debug!("C_CloseSession: CKR_OK");
+    CKR_OK
 }
 
 extern "C" fn C_CloseAllSessions(slotID: CK_SLOT_ID) -> CK_RV {
@@ -544,7 +549,9 @@ extern "C" fn C_SignInit(
         error!("C_SignInit: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    // pMechanism generally appears to be empty.
+    // pMechanism generally appears to be empty (just mechanism is set).
+    // TODO: presumably we should validate it against hKey?
+    debug!("{}", unsafe { *pMechanism });
     let mut manager = IMPL.lock().unwrap();
     match manager.start_sign(hSession, hKey) {
         Ok(()) => {}
