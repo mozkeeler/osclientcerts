@@ -258,8 +258,8 @@ extern "C" fn C_Login(
 }
 
 extern "C" fn C_Logout(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    error!("C_Logout: CKR_FUNCTION_NOT_SUPPORTED");
-    CKR_FUNCTION_NOT_SUPPORTED
+    debug!("C_Logout: CKR_OK");
+    CKR_OK
 }
 
 extern "C" fn C_CreateObject(
