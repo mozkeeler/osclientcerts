@@ -10,8 +10,6 @@ macro_rules! try_read_bytes {
 }
 
 const INTEGER: u8 = 0x02;
-#[cfg(target_os = "macos")]
-const OCTET_STRING: u8 = 0x04;
 const SEQUENCE: u8 = 0x10;
 const CONSTRUCTED: u8 = 0x20;
 
@@ -46,19 +44,6 @@ impl<'a> Sequence<'a> {
         } else {
             Ok(bytes)
         }
-    }
-
-    #[cfg(target_os = "macos")]
-    pub fn read_sequence(&mut self) -> Result<Sequence<'a>, ()> {
-        let sequence_bytes = self.contents.read(SEQUENCE | CONSTRUCTED)?;
-        Ok(Sequence {
-            contents: Der::new(sequence_bytes),
-        })
-    }
-
-    #[cfg(target_os = "macos")]
-    pub fn read_octet_string(&mut self) -> Result<&'a [u8], ()> {
-        self.contents.read(OCTET_STRING)
     }
 
     pub fn at_end(&self) -> bool {
