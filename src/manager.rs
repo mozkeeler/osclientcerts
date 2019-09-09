@@ -12,7 +12,8 @@ pub struct Manager {
     searches: BTreeMap<CK_SESSION_HANDLE, Vec<CK_OBJECT_HANDLE>>,
     signs: BTreeMap<CK_SESSION_HANDLE, CK_OBJECT_HANDLE>,
     objects: BTreeMap<CK_OBJECT_HANDLE, Object>,
-    ids: BTreeSet<Vec<u8>>,
+    cert_ids: BTreeSet<Vec<u8>>,
+    key_ids: BTreeSet<Vec<u8>>,
     next_session: CK_SESSION_HANDLE,
     next_handle: CK_OBJECT_HANDLE,
 }
@@ -24,7 +25,8 @@ impl Manager {
             searches: BTreeMap::new(),
             signs: BTreeMap::new(),
             objects: BTreeMap::new(),
-            ids: BTreeSet::new(),
+            cert_ids: BTreeSet::new(),
+            key_ids: BTreeSet::new(),
             next_session: 1,
             next_handle: 1,
         };
@@ -34,19 +36,26 @@ impl Manager {
 
     fn find_new_objects(&mut self) {
         let objects = list_objects();
+        debug!("found {} objects", objects.len());
         for object in objects {
             match &object {
                 Object::Cert(cert) => {
-                    if self.ids.contains(cert.id()) {
+                    if self.cert_ids.contains(cert.id()) {
                         continue;
                     }
-                    self.ids.insert(cert.id().to_vec());
+                    self.cert_ids.insert(cert.id().to_vec());
+                    let handle = self.get_next_handle();
+                    self.objects.insert(handle, object);
                 }
-                Object::Key(_) => {} // We assume the backend is well-behaved. We could change how
-                                     // `list_objects` works to enforce that they're always given as pairs?
+                Object::Key(key) => {
+                    if self.key_ids.contains(key.id()) {
+                        continue;
+                    }
+                    self.key_ids.insert(key.id().to_vec());
+                    let handle = self.get_next_handle();
+                    self.objects.insert(handle, object);
+                }
             }
-            let handle = self.get_next_handle();
-            self.objects.insert(handle, object);
         }
     }
 

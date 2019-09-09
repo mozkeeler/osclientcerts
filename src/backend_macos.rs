@@ -4,6 +4,7 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
+use sha2::{Digest, Sha256};
 use std::os::raw::c_void;
 
 use core_foundation::array::*;
@@ -64,7 +65,7 @@ pub struct Cert {
 }
 
 impl Cert {
-    fn new(identity: &SecIdentity, id: usize) -> Result<Cert, ()> {
+    fn new(identity: &SecIdentity) -> Result<Cert, ()> {
         let mut certificate = std::ptr::null();
         let status =
             unsafe { SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate) };
@@ -87,6 +88,7 @@ impl Cert {
                 certificate.as_concrete_TypeRef(),
             ))
         };
+        let id = Sha256::digest(der.bytes()).to_vec();
         let issuer = unsafe {
             CFData::wrap_under_create_rule(SecCertificateCopyNormalizedIssuerSequence(
                 certificate.as_concrete_TypeRef(),
@@ -107,7 +109,7 @@ impl Cert {
         Ok(Cert {
             class: serialize_uint(CKO_CERTIFICATE),
             token: serialize_uint(CK_TRUE),
-            id: format!("{:x}", id).into_bytes(),
+            id,
             label: label.to_string().into_bytes(),
             value: der.bytes().to_vec(),
             issuer: issuer.bytes().to_vec(),
@@ -206,7 +208,7 @@ pub struct Key {
 }
 
 impl Key {
-    fn new(identity: &SecIdentity, id: usize) -> Result<Key, ()> {
+    fn new(identity: &SecIdentity) -> Result<Key, ()> {
         let mut certificate = std::ptr::null();
         let status =
             unsafe { SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate) };
@@ -219,6 +221,12 @@ impl Key {
             return Err(());
         }
         let certificate = unsafe { SecCertificate::wrap_under_create_rule(certificate) };
+        let der = unsafe {
+            CFData::wrap_under_create_rule(SecCertificateCopyData(
+                certificate.as_concrete_TypeRef(),
+            ))
+        };
+        let id = Sha256::digest(der.bytes()).to_vec();
         let key = unsafe { SecCertificateCopyKey(certificate.as_concrete_TypeRef()) };
         if key.is_null() {
             error!("couldn't get key from certificate?");
@@ -275,7 +283,7 @@ impl Key {
             identity: SecIdentityHolder(identity.clone()),
             class: serialize_uint(CKO_PRIVATE_KEY),
             token: serialize_uint(CK_TRUE),
-            id: format!("{:x}", id).into_bytes(),
+            id,
             private: serialize_uint(CK_TRUE),
             key_type: serialize_uint(key_type_attribute),
             modulus,
@@ -292,7 +300,7 @@ impl Key {
         &self.token
     }
 
-    fn id(&self) -> &[u8] {
+    pub fn id(&self) -> &[u8] {
         &self.id
     }
 
@@ -487,10 +495,10 @@ fn list_identities() -> Option<Vec<(Cert, Key)>> {
     };
     debug!("found {} identities", identities.len());
     let mut identities_out = Vec::with_capacity(identities.len() as usize);
-    for (id, identity) in identities.get_all_values().iter().enumerate() {
+    for identity in identities.get_all_values().iter() {
         let identity = unsafe { SecIdentity::wrap_under_get_rule(*identity as SecIdentityRef) };
-        let cert = Cert::new(&identity, id);
-        let key = Key::new(&identity, id);
+        let cert = Cert::new(&identity);
+        let key = Key::new(&identity);
         if let (Ok(cert), Ok(key)) = (cert, key) {
             identities_out.push((cert, key));
         }
