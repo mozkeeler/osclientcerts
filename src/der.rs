@@ -1,5 +1,32 @@
 use byteorder::{BigEndian, ReadBytesExt};
 
+// RSAPublicKey ::= SEQUENCE {
+//     modulus           INTEGER,  -- n
+//     publicExponent    INTEGER   -- e
+// }
+pub fn read_rsa_modulus(public_key: &[u8]) -> Result<Vec<u8>, ()> {
+    let mut sequence = Sequence::new(public_key)?;
+    let modulus_value = sequence.read_unsigned_integer()?;
+    let exponent = sequence.read_unsigned_integer()?;
+    if !sequence.at_end() {
+        return Err(());
+    }
+    Ok(modulus_value.to_vec())
+}
+
+//   Ecdsa-Sig-Value  ::=  SEQUENCE  {
+//        r     INTEGER,
+//        s     INTEGER  }
+pub fn read_ec_sig_point<'a>(signature: &'a [u8]) -> Result<(&'a [u8], &'a [u8]), ()> {
+    let mut sequence = Sequence::new(signature)?;
+    let r = sequence.read_unsigned_integer()?;
+    let s = sequence.read_unsigned_integer()?;
+    if !sequence.at_end() {
+        return Err(());
+    }
+    Ok((r, s))
+}
+
 macro_rules! try_read_bytes {
     ($data:ident, $len:expr) => {{
         if $data.len() < $len {
@@ -13,12 +40,12 @@ const INTEGER: u8 = 0x02;
 const SEQUENCE: u8 = 0x10;
 const CONSTRUCTED: u8 = 0x20;
 
-pub struct Sequence<'a> {
+struct Sequence<'a> {
     contents: Der<'a>,
 }
 
 impl<'a> Sequence<'a> {
-    pub fn new(input: &'a [u8]) -> Result<Sequence<'a>, ()> {
+    fn new(input: &'a [u8]) -> Result<Sequence<'a>, ()> {
         let mut der = Der::new(input);
         let sequence_bytes = der.read(SEQUENCE | CONSTRUCTED)?;
         // We're assuming we want to consume the entire input for now.
@@ -31,7 +58,7 @@ impl<'a> Sequence<'a> {
     }
 
     // TODO: we're not exhaustively validating this integer
-    pub fn read_unsigned_integer(&mut self) -> Result<&'a [u8], ()> {
+    fn read_unsigned_integer(&mut self) -> Result<&'a [u8], ()> {
         let bytes = self.contents.read(INTEGER)?;
         if bytes.is_empty() {
             return Err(());
@@ -46,7 +73,7 @@ impl<'a> Sequence<'a> {
         }
     }
 
-    pub fn at_end(&self) -> bool {
+    fn at_end(&self) -> bool {
         self.contents.at_end()
     }
 }
@@ -56,7 +83,7 @@ struct Der<'a> {
 }
 
 impl<'a> Der<'a> {
-    pub fn new(contents: &'a [u8]) -> Der<'a> {
+    fn new(contents: &'a [u8]) -> Der<'a> {
         Der { contents }
     }
 

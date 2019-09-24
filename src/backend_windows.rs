@@ -241,18 +241,8 @@ impl Key {
             let public_key_bytes = unsafe {
                 std::slice::from_raw_parts(spki.PublicKey.pbData, spki.PublicKey.cbData as usize)
             };
-            // TODO: this is shared with the MacOS implementation - refactor to der module?
-            // RSAPublicKey ::= SEQUENCE {
-            //     modulus           INTEGER,  -- n
-            //     publicExponent    INTEGER   -- e
-            // }
-            let mut sequence = Sequence::new(public_key_bytes)?;
-            let modulus_value = sequence.read_unsigned_integer()?;
-            let exponent = sequence.read_unsigned_integer()?;
-            if !sequence.at_end() {
-                return Err(());
-            }
-            modulus = Some(modulus_value.to_vec());
+            let modulus_value = read_rsa_modulus(public_key_bytes)?;
+            modulus = Some(modulus_value);
             (KeyType::RSA, CKK_RSA)
         } else if algorithm_oid == szOID_ECC_PUBLIC_KEY {
             let params = &spki.Algorithm.Parameters;

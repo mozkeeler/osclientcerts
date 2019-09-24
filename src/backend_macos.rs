@@ -246,17 +246,8 @@ impl Key {
                         std::ptr::null_mut(),
                     ))
                 };
-                // RSAPublicKey ::= SEQUENCE {
-                //     modulus           INTEGER,  -- n
-                //     publicExponent    INTEGER   -- e
-                // }
-                let mut sequence = Sequence::new(public_key.bytes())?;
-                let modulus_value = sequence.read_unsigned_integer()?;
-                let exponent = sequence.read_unsigned_integer()?;
-                if !sequence.at_end() {
-                    return Err(());
-                }
-                modulus = Some(modulus_value.to_vec());
+                let modulus_value = read_rsa_modulus(public_key.bytes())?;
+                modulus = Some(modulus_value);
                 (KeyType::RSA, CKK_RSA)
             } else if key_type.as_concrete_TypeRef() == unsafe { kSecAttrKeyTypeECSECPrimeRandom } {
                 // Assume all EC keys are secp256r1, secp384r1, or secp521r1. This
@@ -403,16 +394,14 @@ impl Key {
         };
         let signature_value = match self.key_type_enum {
             KeyType::EC => {
-                //   Ecdsa-Sig-Value  ::=  SEQUENCE  {
-                //        r     INTEGER,
-                //        s     INTEGER  }
-                // We need to return the integers r and s
-                let mut sequence = Sequence::new(signature.bytes())?;
-                let r = sequence.read_unsigned_integer()?;
-                let s = sequence.read_unsigned_integer()?;
-                if !sequence.at_end() {
-                    return Err(());
-                }
+                // We need to convert the DER Ecdsa-Sig-Value to the
+                // concatenation of r and s, the coordinates of the point on
+                // the curve.
+                let (r, s) = read_ec_sig_point(signature.bytes())?;
+                // TODO: is there a padding issue here? This should be failing
+                // ~half the time (unless SecKeyCreateSignature isn't actually
+                // using the shortest possible encoding for the DER
+                // INTEGERs...)
                 let mut signature_value = Vec::with_capacity(r.len() + s.len());
                 signature_value.extend_from_slice(r);
                 signature_value.extend_from_slice(s);
