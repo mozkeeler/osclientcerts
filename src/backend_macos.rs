@@ -371,9 +371,19 @@ impl Key {
             }
             SecKey::wrap_under_create_rule(key)
         };
-        let signing_algorithm = match &self.key_type_enum {
-            &KeyType::EC => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962 },
-            &KeyType::RSA => unsafe { kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw },
+        let signing_algorithm = match (&self.key_type_enum, data.len()) {
+            (&KeyType::RSA, _) => unsafe { kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw },
+            (&KeyType::EC, 20) => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA1 },
+            (&KeyType::EC, 32) => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA256 },
+            (&KeyType::EC, 48) => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA384 },
+            (&KeyType::EC, 64) => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA512 },
+            (&KeyType::EC, _) => {
+                error!(
+                    "Unexpected digested signature input length for ECDSA: {}",
+                    data.len()
+                );
+                return Err(());
+            }
         };
         let data = CFData::from_buffer(data);
         let signature = unsafe {
