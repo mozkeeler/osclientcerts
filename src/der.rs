@@ -17,6 +17,7 @@ pub fn read_rsa_modulus(public_key: &[u8]) -> Result<Vec<u8>, ()> {
 //   Ecdsa-Sig-Value  ::=  SEQUENCE  {
 //        r     INTEGER,
 //        s     INTEGER  }
+#[cfg(target_os = "macos")]
 pub fn read_ec_sig_point<'a>(signature: &'a [u8]) -> Result<(&'a [u8], &'a [u8]), ()> {
     let mut sequence = Sequence::new(signature)?;
     let r = sequence.read_unsigned_integer()?;
