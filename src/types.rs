@@ -1,7 +1,3 @@
-#![allow(non_camel_case_types)]
-#![allow(non_snake_case)]
-#![allow(dead_code)]
-
 use byteorder::{NativeEndian, WriteBytesExt};
 
 use std::fmt;
@@ -32,7 +28,6 @@ pub type CK_VOID_PTR = *mut ::std::os::raw::c_void;
 pub type CK_VOID_PTR_PTR = *mut CK_VOID_PTR;
 
 pub const CK_TRUE: CK_BYTE = 1;
-pub const CK_FALSE: CK_BYTE = 0;
 
 #[cfg_attr(target_os = "macos", repr(C))]
 #[cfg_attr(target_os = "windows", repr(packed, C))]
@@ -824,9 +819,6 @@ pub const CKA_ID: CK_ATTRIBUTE_TYPE = 0x102;
 pub const CKA_MODULUS: CK_ATTRIBUTE_TYPE = 0x120;
 pub const CKA_EC_PARAMS: CK_ATTRIBUTE_TYPE = 0x180;
 pub const CKA_ALWAYS_AUTHENTICATE: CK_ATTRIBUTE_TYPE = 0x202;
-
-pub const CKO_NSS: CK_OBJECT_CLASS = 0x8000_0000 | 0x4E53_4350;
-pub const CKO_NSS_TRUST: CK_OBJECT_CLASS = CKO_NSS + 0x3;
 
 pub const CKO_CERTIFICATE: CK_OBJECT_CLASS = 0x1;
 pub const CKO_PRIVATE_KEY: CK_OBJECT_CLASS = 0x3;
