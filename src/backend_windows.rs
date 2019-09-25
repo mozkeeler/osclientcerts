@@ -2,7 +2,7 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use sha2::{Digest, Sha256};
 use std::convert::TryInto;
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 use std::ops::Deref;
 use std::slice;
 use winapi::shared::bcrypt::*;
@@ -362,7 +362,6 @@ impl Key {
         Some(result)
     }
 
-    // The input data is a hash. What algorithm we use depends on the size of the hash.
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, ()> {
         let key = NCryptKeyHandle::from_cert(&self.cert)?;
         let mut data = data.to_vec();
@@ -383,13 +382,12 @@ impl Key {
             std::ptr::null_mut()
         };
         let mut signature_len = 0;
-        // TODO: len conversion safety
         let status = unsafe {
             NCryptSignHash(
                 *key,
                 params_ptr,
                 data.as_mut_ptr(),
-                data.len() as u32,
+                data.len().try_into().map_err(|_| ())?,
                 std::ptr::null_mut(),
                 0,
                 &mut signature_len,
@@ -410,7 +408,7 @@ impl Key {
                 *key,
                 params_ptr,
                 data.as_mut_ptr(),
-                data.len() as u32,
+                data.len().try_into().map_err(|_| ())?,
                 signature.as_mut_ptr(),
                 signature_len,
                 &mut final_signature_len,
@@ -481,16 +479,14 @@ pub fn list_objects() -> Vec<Object> {
     let location_flags = CERT_SYSTEM_STORE_CURRENT_USER // TODO: loop over multiple locations
         | CERT_STORE_OPEN_EXISTING_FLAG
         | CERT_STORE_READONLY_FLAG;
-    let store_name = CString::new("My").expect("CString::new failed?"); // TODO: more locations?
-                                                                        // TODO: raii types
-                                                                        // TODO: one of these 0s is supposed to be X509_ASN_ENCODING I think
+    let store_name = String::from("My");
     let store = CertStore::new(unsafe {
         CertOpenStore(
             CERT_STORE_PROV_SYSTEM_REGISTRY_A,
             0,
             0,
             location_flags,
-            store_name.into_raw() as *const winapi::ctypes::c_void,
+            store_name.as_ptr() as *const winapi::ctypes::c_void,
         )
     });
     if store.is_null() {
