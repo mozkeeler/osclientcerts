@@ -1,6 +1,7 @@
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use sha2::{Digest, Sha256};
+use std::convert::TryInto;
 use std::ffi::{CStr, CString};
 use std::ops::Deref;
 use std::slice;
@@ -10,6 +11,33 @@ use winapi::um::wincrypt::*;
 
 use crate::der::*;
 use crate::types::*;
+
+fn get_cert_subject_dn(cert_info: &CERT_INFO) -> Result<Vec<u8>, ()> {
+    let mut cert_info_subject = cert_info.Subject;
+    let subject_dn_len = unsafe {
+        CertNameToStrA(
+            X509_ASN_ENCODING,
+            &mut cert_info_subject,
+            CERT_SIMPLE_NAME_STR,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    let mut subject_dn_string_bytes: Vec<u8> = vec![0; subject_dn_len as usize];
+    let subject_dn_len = unsafe {
+        CertNameToStrA(
+            X509_ASN_ENCODING,
+            &mut cert_info_subject,
+            CERT_SIMPLE_NAME_STR,
+            subject_dn_string_bytes.as_mut_ptr() as *mut i8,
+            subject_dn_string_bytes.len().try_into().map_err(|_| ())?,
+        )
+    };
+    if subject_dn_len as usize != subject_dn_string_bytes.len() {
+        return Err(());
+    }
+    Ok(subject_dn_string_bytes)
+}
 
 pub struct Cert {
     class: Vec<u8>,
@@ -30,7 +58,7 @@ impl Cert {
             unsafe { slice::from_raw_parts(cert.pbCertEncoded, cert.cbCertEncoded as usize) };
         let value = value.to_vec();
         let id = Sha256::digest(&value).to_vec();
-        let label = id.clone(); // TODO
+        let label = get_cert_subject_dn(&cert_info)?;
         let issuer = unsafe {
             slice::from_raw_parts(cert_info.Issuer.pbData, cert_info.Issuer.cbData as usize)
         };
