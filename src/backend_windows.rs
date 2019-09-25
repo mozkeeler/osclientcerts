@@ -2,7 +2,7 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use sha2::{Digest, Sha256};
 use std::convert::TryInto;
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::ops::Deref;
 use std::slice;
 use winapi::shared::bcrypt::*;
@@ -479,7 +479,7 @@ pub fn list_objects() -> Vec<Object> {
     let location_flags = CERT_SYSTEM_STORE_CURRENT_USER // TODO: loop over multiple locations
         | CERT_STORE_OPEN_EXISTING_FLAG
         | CERT_STORE_READONLY_FLAG;
-    let store_name = String::from("My");
+    let store_name = CString::new("My").expect("CString::new failed");
     let store = CertStore::new(unsafe {
         CertOpenStore(
             CERT_STORE_PROV_SYSTEM_REGISTRY_A,
