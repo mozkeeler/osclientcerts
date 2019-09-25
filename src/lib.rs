@@ -53,8 +53,8 @@ extern "C" fn C_GetInfo(pInfo: CK_INFO_PTR) -> CK_RV {
     let mut info = CK_INFO::default();
     info.cryptokiVersion.major = 2;
     info.cryptokiVersion.minor = 2;
-    info.manufacturerID = *b"Mozilla Corporation\0\0\0\0\0\0\0\0\0\0\0\0\0";
-    info.libraryDescription = *b"OS Client Cert Module\0\0\0\0\0\0\0\0\0\0\0";
+    info.manufacturerID = *b"Mozilla Corporation             ";
+    info.libraryDescription = *b"OS Client Cert Module           ";
     unsafe {
         *pInfo = info;
     }
@@ -96,10 +96,11 @@ extern "C" fn C_GetSlotInfo(slotID: CK_SLOT_ID, pInfo: CK_SLOT_INFO_PTR) -> CK_R
         error!("C_GetSlotInfo: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let mut slot_info = CK_SLOT_INFO::default();
-    slot_info.slotDescription1 = *b"OS Client Cert Slot\0\0\0\0\0\0\0\0\0\0\0\0\0";
-    slot_info.manufacturerID = *b"Mozilla Corporation\0\0\0\0\0\0\0\0\0\0\0\0\0";
-    slot_info.flags = CKF_TOKEN_PRESENT;
+    let slot_info = CK_SLOT_INFO::new(
+        *b"OS Client Cert Slot                                             ",
+        *b"Mozilla Corporation             ",
+        CKF_TOKEN_PRESENT,
+    );
     unsafe {
         *pInfo = slot_info;
     }
@@ -113,9 +114,10 @@ extern "C" fn C_GetTokenInfo(slotID: CK_SLOT_ID, pInfo: CK_TOKEN_INFO_PTR) -> CK
         return CKR_ARGUMENTS_BAD;
     }
     let mut token_info = CK_TOKEN_INFO::default();
-    token_info.label = *b"OS Client Cert Token\0\0\0\0\0\0\0\0\0\0\0\0";
-    token_info.manufacturerID = *b"Mozilla Corporation\0\0\0\0\0\0\0\0\0\0\0\0\0";
-    token_info.model = *b"libosclientcerts";
+    token_info.label = *b"OS Client Cert Token            ";
+    token_info.manufacturerID = *b"Mozilla Corporation             ";
+    token_info.model = *b"osclientcerts   ";
+    token_info.serialNumber = *b"0000000000000000";
     unsafe {
         *pInfo = token_info;
     }

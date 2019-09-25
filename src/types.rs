@@ -55,15 +55,28 @@ pub type CK_SLOT_ID_PTR = *mut CK_SLOT_ID;
 
 #[cfg_attr(target_os = "macos", repr(C))]
 #[cfg_attr(target_os = "windows", repr(packed, C))]
-#[derive(Clone, Copy, Debug, Default)]
 pub struct CK_SLOT_INFO {
-    // We're cheating here because derive only goes up to 32 for some reason.
-    pub slotDescription1: [CK_UTF8CHAR; 32usize],
-    pub slotDescription2: [CK_UTF8CHAR; 32usize],
+    pub slotDescription: [CK_UTF8CHAR; 64usize],
     pub manufacturerID: [CK_UTF8CHAR; 32usize],
     pub flags: CK_FLAGS,
     pub hardwareVersion: CK_VERSION,
     pub firmwareVersion: CK_VERSION,
+}
+
+impl CK_SLOT_INFO {
+    pub fn new(
+        slotDescription: [CK_UTF8CHAR; 64usize],
+        manufacturerID: [CK_UTF8CHAR; 32usize],
+        flags: CK_FLAGS,
+    ) -> CK_SLOT_INFO {
+        CK_SLOT_INFO {
+            slotDescription,
+            manufacturerID,
+            flags,
+            hardwareVersion: CK_VERSION::default(),
+            firmwareVersion: CK_VERSION::default(),
+        }
+    }
 }
 
 pub type CK_SLOT_INFO_PTR = *mut CK_SLOT_INFO;
