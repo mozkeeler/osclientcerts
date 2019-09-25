@@ -3,15 +3,14 @@
 #![allow(unused_variables)]
 
 extern crate byteorder;
+#[cfg(target_os = "macos")]
+#[macro_use]
+extern crate core_foundation;
 extern crate env_logger;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-
-#[cfg(target_os = "macos")]
-#[macro_use]
-extern crate core_foundation;
 extern crate sha2;
 #[cfg(target_os = "windows")]
 extern crate winapi;
@@ -30,15 +29,19 @@ use manager::Manager;
 use types::*;
 
 lazy_static! {
-    static ref IMPL: Mutex<Manager> = {
+    /// The singleton `Manager` that handles state with respect to PKCS #11. Only one thread may
+    /// use it at a time.
+    static ref MANAGER: Mutex<Manager> = {
         env_logger::init();
         Mutex::new(Manager::new())
     };
 }
 
+/// This gets called to initialize the module. For this implementation, this consists of
+/// instantiating the `Manager`.
 extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
     // Getting the manager initializes our logging, so do it first.
-    let manager = IMPL.lock().unwrap();
+    let manager = MANAGER.lock().unwrap();
     debug!("C_Initialize: CKR_OK");
     CKR_OK
 }
@@ -48,6 +51,8 @@ extern "C" fn C_Finalize(pReserved: CK_VOID_PTR) -> CK_RV {
     CKR_OK
 }
 
+/// This gets called to gather some information about the module. In particular, this implementation
+/// supports (portions of) cryptoki (PKCS #11) version 2.2.
 extern "C" fn C_GetInfo(pInfo: CK_INFO_PTR) -> CK_RV {
     debug!("C_GetInfo: CKR_OK");
     let mut info = CK_INFO::default();
@@ -61,9 +66,11 @@ extern "C" fn C_GetInfo(pInfo: CK_INFO_PTR) -> CK_RV {
     CKR_OK
 }
 
-// We only have one slot. Its ID is 1.
+/// This module only has one slot. Its ID is 1.
 const SLOT_ID: CK_SLOT_ID = 1;
 
+/// This gets called twice: once with a null `pSlotList` to get the number of slots (returned via
+/// `pulCount`) and a second time to get the ID for each slot.
 extern "C" fn C_GetSlotList(
     tokenPresent: CK_BBOOL,
     pSlotList: CK_SLOT_ID_PTR,
@@ -91,6 +98,8 @@ extern "C" fn C_GetSlotList(
     CKR_OK
 }
 
+/// This gets called to obtain information about slots. In this implementation, the token is always
+/// present in the slot.
 extern "C" fn C_GetSlotInfo(slotID: CK_SLOT_ID, pInfo: CK_SLOT_INFO_PTR) -> CK_RV {
     if slotID != SLOT_ID || pInfo.is_null() {
         error!("C_GetSlotInfo: CKR_ARGUMENTS_BAD");
@@ -108,6 +117,8 @@ extern "C" fn C_GetSlotInfo(slotID: CK_SLOT_ID, pInfo: CK_SLOT_INFO_PTR) -> CK_R
     CKR_OK
 }
 
+/// This gets called to obtain some information about tokens. This implementation only has one slot,
+/// so it only has one token. This information is primarily for display purposes.
 extern "C" fn C_GetTokenInfo(slotID: CK_SLOT_ID, pInfo: CK_TOKEN_INFO_PTR) -> CK_RV {
     if slotID != SLOT_ID || pInfo.is_null() {
         error!("C_GetTokenInfo: CKR_ARGUMENTS_BAD");
@@ -125,6 +136,8 @@ extern "C" fn C_GetTokenInfo(slotID: CK_SLOT_ID, pInfo: CK_TOKEN_INFO_PTR) -> CK
     CKR_OK
 }
 
+/// This gets called to determine what mechanisms a slot supports. This implementation does not
+/// support any mechanisms.
 extern "C" fn C_GetMechanismList(
     slotID: CK_SLOT_ID,
     pMechanismList: CK_MECHANISM_TYPE_PTR,
@@ -182,6 +195,7 @@ extern "C" fn C_SetPIN(
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
+/// This gets called to create a new session. This module defers to the `Manager` to implement this.
 extern "C" fn C_OpenSession(
     slotID: CK_SLOT_ID,
     flags: CK_FLAGS,
@@ -193,7 +207,7 @@ extern "C" fn C_OpenSession(
         error!("C_OpenSession: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let mut manager = IMPL.lock().unwrap();
+    let mut manager = MANAGER.lock().unwrap();
     let session_handle = manager.open_session();
     unsafe {
         *phSession = session_handle;
@@ -202,8 +216,9 @@ extern "C" fn C_OpenSession(
     CKR_OK
 }
 
+/// This gets called to close a session. This is proxied to the `Manager`.
 extern "C" fn C_CloseSession(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    let mut manager = IMPL.lock().unwrap();
+    let mut manager = MANAGER.lock().unwrap();
     if manager.close_session(hSession).is_err() {
         error!("C_CloseSession: CKR_SESSION_HANDLE_INVALID");
         return CKR_SESSION_HANDLE_INVALID;
@@ -212,12 +227,13 @@ extern "C" fn C_CloseSession(hSession: CK_SESSION_HANDLE) -> CK_RV {
     CKR_OK
 }
 
+/// This gets called to close all open sessions at once. This is proxied to the `Manager`.
 extern "C" fn C_CloseAllSessions(slotID: CK_SLOT_ID) -> CK_RV {
     if slotID != SLOT_ID {
         error!("C_CloseAllSessions: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let mut manager = IMPL.lock().unwrap();
+    let mut manager = MANAGER.lock().unwrap();
     manager.close_all_sessions();
     debug!("C_CloseAllSessions: CKR_OK");
     CKR_OK
@@ -258,6 +274,9 @@ extern "C" fn C_Login(
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
+/// This gets called to log out and drop any authenticated resources. Because this module does not
+/// hold on to authenticated resources, this module "implements" this by doing nothing and
+/// returning a success result.
 extern "C" fn C_Logout(hSession: CK_SESSION_HANDLE) -> CK_RV {
     debug!("C_Logout: CKR_OK");
     CKR_OK
@@ -298,6 +317,12 @@ extern "C" fn C_GetObjectSize(
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
+/// This gets called to obtain the values of a number of attributes of an object identified by the
+/// given handle. This module implements this by requesting the object from the `Manager` and
+/// attempting to get the value of each attribute. If a specified attribute is not defined on the
+/// object, the length of that attribute is set to -1 to indicate that it is not available.
+/// This gets called twice: once to obtain the lengths of the attributes and again to get the
+/// values.
 extern "C" fn C_GetAttributeValue(
     hSession: CK_SESSION_HANDLE,
     hObject: CK_OBJECT_HANDLE,
@@ -309,7 +334,7 @@ extern "C" fn C_GetAttributeValue(
         return CKR_ARGUMENTS_BAD;
     }
     // TODO: check hSession (do we actually need to?)
-    let mut manager = IMPL.lock().unwrap();
+    let mut manager = MANAGER.lock().unwrap();
     let object = match manager.get_object(hObject) {
         Ok(object) => object,
         Err(()) => {
@@ -350,6 +375,9 @@ extern "C" fn C_SetAttributeValue(
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
+/// This gets called to initialize a search for objects matching a given list of attributes. This
+/// module implements this by gathering the attributes and passing them to the `Manager` to start
+/// the search.
 extern "C" fn C_FindObjectsInit(
     hSession: CK_SESSION_HANDLE,
     pTemplate: CK_ATTRIBUTE_PTR,
@@ -369,7 +397,7 @@ extern "C" fn C_FindObjectsInit(
         };
         attrs.push((attr.type_, slice.to_owned()));
     }
-    let mut manager = IMPL.lock().unwrap();
+    let mut manager = MANAGER.lock().unwrap();
     match manager.start_search(hSession, &attrs) {
         Ok(()) => {}
         Err(()) => {
@@ -381,6 +409,9 @@ extern "C" fn C_FindObjectsInit(
     CKR_OK
 }
 
+/// This gets called after `C_FindObjectsInit` to get the results of a search. This module
+/// implements this by looking up the search in the `Manager` and copying out the matching object
+/// handles.
 extern "C" fn C_FindObjects(
     hSession: CK_SESSION_HANDLE,
     phObject: CK_OBJECT_HANDLE_PTR,
@@ -391,7 +422,7 @@ extern "C" fn C_FindObjects(
         error!("C_FindObjects: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let manager = IMPL.lock().unwrap();
+    let manager = MANAGER.lock().unwrap();
     let handles = match manager.search(hSession) {
         Ok(handles) => handles,
         Err(()) => {
@@ -415,8 +446,10 @@ extern "C" fn C_FindObjects(
     CKR_OK
 }
 
+/// This gets called after `C_FindObjectsInit` and `C_FindObjects` to finish a search. The module
+/// tells the `Manager` to clear the search.
 extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    let mut manager = IMPL.lock().unwrap();
+    let mut manager = MANAGER.lock().unwrap();
     manager.clear_search(hSession); // TODO: return error if there was no search?
     debug!("C_FindObjectsFinal: CKR_OK");
     CKR_OK
@@ -541,6 +574,7 @@ extern "C" fn C_DigestFinal(
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
+/// This gets called to set up a sign operation. The module essentially defers to the `Manager`.
 extern "C" fn C_SignInit(
     hSession: CK_SESSION_HANDLE,
     pMechanism: CK_MECHANISM_PTR,
@@ -553,7 +587,7 @@ extern "C" fn C_SignInit(
     // pMechanism generally appears to be empty (just mechanism is set).
     // TODO: presumably we should validate it against hKey?
     debug!("{}", unsafe { *pMechanism });
-    let mut manager = IMPL.lock().unwrap();
+    let mut manager = MANAGER.lock().unwrap();
     match manager.start_sign(hSession, hKey) {
         Ok(()) => {}
         Err(()) => {
@@ -565,6 +599,9 @@ extern "C" fn C_SignInit(
     CKR_OK
 }
 
+/// NSS calls this after `C_SignInit` (there are more ways in the PKCS #11 specification to sign
+/// data, but this is the only way supported by this module). The module essentially defers to the
+/// `Manager` and copies out the resulting signature.
 extern "C" fn C_Sign(
     hSession: CK_SESSION_HANDLE,
     pData: CK_BYTE_PTR,
@@ -578,7 +615,7 @@ extern "C" fn C_Sign(
         error!("C_Sign: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let manager = IMPL.lock().unwrap();
+    let manager = MANAGER.lock().unwrap();
     let data = unsafe { std::slice::from_raw_parts(pData, ulDataLen as usize) };
     match manager.sign(hSession, data) {
         Ok(signature) => {
@@ -841,6 +878,8 @@ extern "C" fn C_WaitForSlotEvent(
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
+/// To be a valid PKCS #11 module, this list of functions must be supported. At least cryptoki 2.2
+/// must be supported for this module to work in NSS.
 static FUNCTION_LIST: CK_FUNCTION_LIST = CK_FUNCTION_LIST {
     version: CK_VERSION { major: 2, minor: 2 },
     C_Initialize: Some(C_Initialize),
@@ -913,6 +952,8 @@ static FUNCTION_LIST: CK_FUNCTION_LIST = CK_FUNCTION_LIST {
     C_WaitForSlotEvent: Some(C_WaitForSlotEvent),
 };
 
+/// This is the only function this module exposes. NSS calls it to obtain the list of functions
+/// comprising this module.
 #[no_mangle]
 pub extern "C" fn C_GetFunctionList(ppFunctionList: CK_FUNCTION_LIST_PTR_PTR) -> CK_RV {
     unsafe {

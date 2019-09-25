@@ -7,14 +7,26 @@ use crate::backend_windows as backend;
 use crate::types::*;
 use backend::*;
 
+/// The `Manager` keeps track of the state of this module with respect to the PKCS #11
+/// specification. This includes what sessions are open, which search and sign operations are
+/// ongoing, and what objects are known and by what handle.
 pub struct Manager {
+    /// A set of sessions. Sessions can be created (opened) and later closed.
     sessions: BTreeSet<CK_SESSION_HANDLE>,
+    /// A map of searches to PKCS #11 object handles that match those searches.
     searches: BTreeMap<CK_SESSION_HANDLE, Vec<CK_OBJECT_HANDLE>>,
+    /// A map of sign operations to the object handle being used by each one.
     signs: BTreeMap<CK_SESSION_HANDLE, CK_OBJECT_HANDLE>,
+    /// A map of object handles to the underlying objects.
     objects: BTreeMap<CK_OBJECT_HANDLE, Object>,
+    /// A set of certificate identifiers (not the same as handles).
     cert_ids: BTreeSet<Vec<u8>>,
+    /// A set of key identifiers (not the same as handles). For each id in this set, there should be
+    /// a corresponding identical id in the `cert_ids` set, and vice-versa.
     key_ids: BTreeSet<Vec<u8>>,
+    /// The next session handle to hand out.
     next_session: CK_SESSION_HANDLE,
+    /// The next object handle to hand out.
     next_handle: CK_OBJECT_HANDLE,
 }
 
@@ -34,6 +46,9 @@ impl Manager {
         manager
     }
 
+    /// When a new `Manager` is created and when a new session is opened, this searches for
+    /// certificates and keys to expose. We de-duplicate previously-found certificates and keys by
+    /// keeping track of their IDs.
     fn find_new_objects(&mut self) {
         let objects = list_objects();
         debug!("found {} objects", objects.len());
@@ -85,6 +100,10 @@ impl Manager {
         next_handle
     }
 
+    /// PKCS #11 specifies that search operations happen in three phases: setup, get any matches
+    /// (this part may be repeated if the caller uses a small buffer), and end. This implementation
+    /// does all of the work up front and gathers all matching objects during setup and retains them
+    /// until the search is cleared.
     pub fn start_search(
         &mut self,
         session: CK_SESSION_HANDLE,
@@ -121,6 +140,10 @@ impl Manager {
         }
     }
 
+    /// The way NSS uses PKCS #11 to sign data happens in two phases: setup and sign. This
+    /// implementation makes a note of which key is to be used (if it exists) during setup. When the
+    /// caller finishes with the sign operation, this implementation retrieves the key handle and
+    /// performs the signature.
     pub fn start_sign(
         &mut self,
         session: CK_SESSION_HANDLE,

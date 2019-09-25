@@ -1,9 +1,13 @@
 use byteorder::{BigEndian, ReadBytesExt};
 
-// RSAPublicKey ::= SEQUENCE {
-//     modulus           INTEGER,  -- n
-//     publicExponent    INTEGER   -- e
-// }
+/// Given a slice of DER bytes representing an RSA public key, extracts the bytes of the modulus
+/// as an unsigned integer. Also verifies that the public exponent is present (again as an
+/// unsigned integer). Finally verifies that reading these values consumes the entirety of the
+/// slice.
+/// RSAPublicKey ::= SEQUENCE {
+///     modulus           INTEGER,  -- n
+///     publicExponent    INTEGER   -- e
+/// }
 pub fn read_rsa_modulus(public_key: &[u8]) -> Result<Vec<u8>, ()> {
     let mut sequence = Sequence::new(public_key)?;
     let modulus_value = sequence.read_unsigned_integer()?;
@@ -14,9 +18,11 @@ pub fn read_rsa_modulus(public_key: &[u8]) -> Result<Vec<u8>, ()> {
     Ok(modulus_value.to_vec())
 }
 
-//   Ecdsa-Sig-Value  ::=  SEQUENCE  {
-//        r     INTEGER,
-//        s     INTEGER  }
+/// Given a slice of DER bytes representing an ECDSA signature, extracts the bytes of `r` and `s`
+/// as unsigned integers. Also verifies that this consumes the entirety of the slice.
+///   Ecdsa-Sig-Value  ::=  SEQUENCE  {
+///        r     INTEGER,
+///        s     INTEGER  }
 #[cfg(target_os = "macos")]
 pub fn read_ec_sig_point<'a>(signature: &'a [u8]) -> Result<(&'a [u8], &'a [u8]), ()> {
     let mut sequence = Sequence::new(signature)?;
@@ -28,6 +34,9 @@ pub fn read_ec_sig_point<'a>(signature: &'a [u8]) -> Result<(&'a [u8], &'a [u8])
     Ok((r, s))
 }
 
+/// Helper macro for reading some bytes from a slice while checking the slice is long enough.
+/// Returns a pair consisting of a slice of the bytes read and a slice of the rest of the bytes
+/// from the original slice.
 macro_rules! try_read_bytes {
     ($data:ident, $len:expr) => {{
         if $data.len() < $len {
@@ -37,11 +46,17 @@ macro_rules! try_read_bytes {
     }};
 }
 
+/// ASN.1 tag identifying an integer.
 const INTEGER: u8 = 0x02;
+/// ASN.1 tag identifying a sequence.
 const SEQUENCE: u8 = 0x10;
+/// ASN.1 tag modifier identifying an item as constructed.
 const CONSTRUCTED: u8 = 0x20;
 
+/// A helper struct for reading items from a DER SEQUENCE (in this case, all sequences are
+/// assumed to be CONSTRUCTED).
 struct Sequence<'a> {
+    /// The contents of the SEQUENCE.
     contents: Der<'a>,
 }
 
@@ -79,6 +94,8 @@ impl<'a> Sequence<'a> {
     }
 }
 
+/// A helper struct for reading DER data. The contents are treated like a cursor, so its position
+/// is updated as data is read.
 struct Der<'a> {
     contents: &'a [u8],
 }

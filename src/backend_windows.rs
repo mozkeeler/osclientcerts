@@ -12,6 +12,9 @@ use winapi::um::wincrypt::*;
 use crate::der::*;
 use crate::types::*;
 
+/// Given a `CERT_INFO`, tries to return the bytes of the subject distinguished name as formatted by
+/// `CertNameToStrA` using the flag `CERT_SIMPLE_NAME_STR`. This is used as the label for the
+/// certificate.
 fn get_cert_subject_dn(cert_info: &CERT_INFO) -> Result<Vec<u8>, ()> {
     let mut cert_info_subject = cert_info.Subject;
     let subject_dn_len = unsafe {
@@ -23,6 +26,7 @@ fn get_cert_subject_dn(cert_info: &CERT_INFO) -> Result<Vec<u8>, ()> {
             0,
         )
     };
+    // subject_dn_len includes the terminating null byte.
     let mut subject_dn_string_bytes: Vec<u8> = vec![0; subject_dn_len as usize];
     let subject_dn_len = unsafe {
         CertNameToStrA(
@@ -39,14 +43,23 @@ fn get_cert_subject_dn(cert_info: &CERT_INFO) -> Result<Vec<u8>, ()> {
     Ok(subject_dn_string_bytes)
 }
 
+/// Represents a certificate for which there exists a corresponding private key.
 pub struct Cert {
+    /// PKCS #11 object class. Will be `CKO_CERTIFICATE`.
     class: Vec<u8>,
+    /// Whether or not this is on a token. Will be `CK_TRUE`.
     token: Vec<u8>,
+    /// An identifier unique to this certificate. Must be the same as the ID for the private key.
     id: Vec<u8>,
+    /// The bytes of a human-readable label for this certificate. Will be the subject DN.
     label: Vec<u8>,
+    /// The DER bytes of the certificate.
     value: Vec<u8>,
+    /// The DER bytes of the issuer distinguished name of the certificate.
     issuer: Vec<u8>,
+    /// The DER bytes of the serial number of the certificate.
     serial_number: Vec<u8>,
+    /// The DER bytes of the subject distinguished name of the certificate.
     subject: Vec<u8>,
 }
 
@@ -85,6 +98,7 @@ impl Cert {
             subject,
         })
     }
+
     fn class(&self) -> &[u8] {
         &self.class
     }
@@ -224,21 +238,33 @@ impl Deref for NCryptKeyHandle {
     }
 }
 
+/// A helper enum to identify a private key's type. We support EC and RSA.
 #[derive(Debug)]
 pub enum KeyType {
     EC,
     RSA,
 }
 
+/// Represents a private key for which there exists a corresponding certificate.
 pub struct Key {
+    /// A handle on the OS mechanism that represents the certificate for this key.
     cert: CertContext,
+    /// PKCS #11 object class. Will be `CKO_PRIVATE_KEY`.
     class: Vec<u8>,
+    /// Whether or not this is on a token. Will be `CK_TRUE`.
     token: Vec<u8>,
+    /// An identifier unique to this key. Must be the same as the ID for the certificate.
     id: Vec<u8>,
+    /// Whether or not this key is "private" (can it be exported?). Will be CK_TRUE (it can't be
+    /// exported).
     private: Vec<u8>,
+    /// PKCS #11 key type. Will be `CKK_EC` for EC, and `CKK_RSA` for RSA.
     key_type: Vec<u8>,
+    /// If this is an RSA key, this is the value of the modulus as an unsigned integer.
     modulus: Option<Vec<u8>>,
+    /// If this is an EC key, this is the DER bytes of the OID identifying the curve the key is on.
     ec_params: Option<Vec<u8>>,
+    /// An enum identifying this key's type.
     key_type_enum: KeyType,
 }
 
@@ -363,6 +389,8 @@ impl Key {
     }
 
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, ()> {
+        // Acquiring a handle on the key can cause the OS to show some UI to the user, so we do this
+        // as late as possible (i.e. here).
         let key = NCryptKeyHandle::from_cert(&self.cert)?;
         let mut data = data.to_vec();
         let (params, flags) = match self.key_type_enum {
@@ -397,7 +425,6 @@ impl Key {
         // 0 is "ERROR_SUCCESS" (but "ERROR_SUCCESS" is unsigned, whereas SECURITY_STATUS is signed)
         if status != 0 {
             error!("NCryptSignHash failed (first time), {}", status);
-            // TODO: stringify/log error?
             return Err(());
         }
         debug!("signature_len is {}", signature_len);
@@ -417,7 +444,6 @@ impl Key {
         };
         if status != 0 {
             error!("NCryptSignHash failed (second time) {}", status);
-            // TODO: stringify/log error?
             return Err(());
         }
         assert!(final_signature_len == signature_len);
@@ -425,6 +451,8 @@ impl Key {
     }
 }
 
+/// A helper enum that represents the two types of PKCS #11 objects we support: certificates and
+/// keys.
 pub enum Object {
     Cert(Cert),
     Key(Key),
@@ -474,6 +502,8 @@ impl CertStore {
     }
 }
 
+/// Attempts to enumerate certificates with private keys exposed by the OS. Currently only looks in
+/// the "My" cert store of the current user. In the future this may look in more locations.
 pub fn list_objects() -> Vec<Object> {
     let mut objects = Vec::new();
     let location_flags = CERT_SYSTEM_STORE_CURRENT_USER // TODO: loop over multiple locations
@@ -490,7 +520,7 @@ pub fn list_objects() -> Vec<Object> {
         )
     });
     if store.is_null() {
-        warn!("CertOpenStore failed");
+        error!("CertOpenStore failed");
         return objects;
     }
     let mut cert_context: PCCERT_CONTEXT = std::ptr::null_mut();
