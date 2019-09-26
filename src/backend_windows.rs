@@ -392,28 +392,25 @@ impl Key {
         // Acquiring a handle on the key can cause the OS to show some UI to the user, so we do this
         // as late as possible (i.e. here).
         let key = NCryptKeyHandle::from_cert(&self.cert)?;
-        let mut data = data.to_vec();
-        let (params, flags) = match self.key_type_enum {
-            KeyType::EC => (None, 0),
+        // This only applies to RSA.
+        let mut padding_info = BCRYPT_PKCS1_PADDING_INFO {
+            // Because the hash algorithm is encoded in `data`, we don't have to (and don't want to)
+            // specify a particular algorithm here.
+            pszAlgId: std::ptr::null(),
+        };
+        let (padding_info_ptr, flags) = match self.key_type_enum {
+            KeyType::EC => (std::ptr::null_mut(), 0),
             KeyType::RSA => (
-                Some(BCRYPT_PKCS1_PADDING_INFO {
-                    // Because the hash algorithm is encoded in `data`, we don't have to (and don't
-                    // want to) specify a particular algorithm here.
-                    pszAlgId: std::ptr::null(),
-                }),
+                &mut padding_info as *mut BCRYPT_PKCS1_PADDING_INFO,
                 NCRYPT_PAD_PKCS1_FLAG,
             ),
         };
-        let params_ptr = if let Some(mut params) = params {
-            (&mut params as *mut BCRYPT_PKCS1_PADDING_INFO) as *mut std::os::raw::c_void
-        } else {
-            std::ptr::null_mut()
-        };
+        let mut data = data.to_vec();
         let mut signature_len = 0;
         let status = unsafe {
             NCryptSignHash(
                 *key,
-                params_ptr,
+                padding_info_ptr as *mut std::ffi::c_void,
                 data.as_mut_ptr(),
                 data.len().try_into().map_err(|_| ())?,
                 std::ptr::null_mut(),
@@ -427,13 +424,12 @@ impl Key {
             error!("NCryptSignHash failed (first time), {}", status);
             return Err(());
         }
-        debug!("signature_len is {}", signature_len);
         let mut signature = vec![0; signature_len as usize];
         let mut final_signature_len = signature_len;
         let status = unsafe {
             NCryptSignHash(
                 *key,
-                params_ptr,
+                padding_info_ptr as *mut std::ffi::c_void,
                 data.as_mut_ptr(),
                 data.len().try_into().map_err(|_| ())?,
                 signature.as_mut_ptr(),
