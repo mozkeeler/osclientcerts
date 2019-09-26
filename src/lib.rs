@@ -418,12 +418,12 @@ extern "C" fn C_FindObjects(
     ulMaxObjectCount: CK_ULONG,
     pulObjectCount: CK_ULONG_PTR,
 ) -> CK_RV {
-    if phObject.is_null() || pulObjectCount.is_null() {
+    if phObject.is_null() || pulObjectCount.is_null() || ulMaxObjectCount == 0 {
         error!("C_FindObjects: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let manager = MANAGER.lock().unwrap();
-    let handles = match manager.search(hSession) {
+    let mut manager = MANAGER.lock().unwrap();
+    let handles = match manager.search(hSession, ulMaxObjectCount as usize) {
         Ok(handles) => handles,
         Err(()) => {
             error!("C_FindObjects: CKR_ARGUMENTS_BAD");
@@ -431,7 +431,7 @@ extern "C" fn C_FindObjects(
         }
     };
     debug!("C_FindObjects: found handles {:?}", handles);
-    // TODO: not quite sure what the right semantics are re. if we have more handles than ulMaxObjectCount
+    assert!(handles.len() <= ulMaxObjectCount as usize);
     unsafe {
         *pulObjectCount = handles.len() as CK_ULONG;
     }

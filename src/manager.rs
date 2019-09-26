@@ -103,7 +103,7 @@ impl Manager {
     /// PKCS #11 specifies that search operations happen in three phases: setup, get any matches
     /// (this part may be repeated if the caller uses a small buffer), and end. This implementation
     /// does all of the work up front and gathers all matching objects during setup and retains them
-    /// until the search is cleared.
+    /// until they are retrieved and consumed via `search`.
     pub fn start_search(
         &mut self,
         session: CK_SESSION_HANDLE,
@@ -122,9 +122,28 @@ impl Manager {
         Ok(())
     }
 
-    pub fn search(&self, session: CK_SESSION_HANDLE) -> Result<&Vec<CK_OBJECT_HANDLE>, ()> {
-        match self.searches.get(&session) {
-            Some(search) => Ok(search),
+    /// Given a session and a maximum number of object handles to return, attempts to retrieve up to
+    /// that many objects from the corresponding search. Updates the search so those objects are not
+    /// returned repeatedly. `max_objects` must be non-zero.
+    pub fn search(
+        &mut self,
+        session: CK_SESSION_HANDLE,
+        max_objects: usize,
+    ) -> Result<Vec<CK_OBJECT_HANDLE>, ()> {
+        if max_objects == 0 {
+            return Err(());
+        }
+        match self.searches.get_mut(&session) {
+            Some(search) => {
+                let split_at = if max_objects >= search.len() {
+                    0
+                } else {
+                    search.len() - max_objects
+                };
+                let to_return = search.split_off(split_at);
+                assert!(to_return.len() <= max_objects);
+                Ok(to_return)
+            }
             None => Err(()),
         }
     }
