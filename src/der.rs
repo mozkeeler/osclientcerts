@@ -143,3 +143,100 @@ impl<'a> Der<'a> {
         self.contents.is_empty()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn der_test_empty_input() {
+        let input = Vec::new();
+        let mut der = Der::new(&input);
+        assert!(der.read(INTEGER).is_err());
+    }
+
+    #[test]
+    fn der_test_no_length() {
+        let input = vec![INTEGER];
+        let mut der = Der::new(&input);
+        assert!(der.read(INTEGER).is_err());
+    }
+
+    #[test]
+    fn der_test_empty_sequence() {
+        let input = vec![SEQUENCE, 0];
+        let mut der = Der::new(&input);
+        let read_result = der.read(SEQUENCE);
+        assert!(read_result.is_ok());
+        let sequence_bytes = read_result.unwrap();
+        assert_eq!(sequence_bytes.len(), 0);
+        assert!(der.at_end());
+    }
+
+    #[test]
+    fn der_test_not_at_end() {
+        let input = vec![SEQUENCE, 0, 1];
+        let mut der = Der::new(&input);
+        let read_result = der.read(SEQUENCE);
+        assert!(read_result.is_ok());
+        let sequence_bytes = read_result.unwrap();
+        assert_eq!(sequence_bytes.len(), 0);
+        assert!(!der.at_end());
+    }
+
+    #[test]
+    fn der_test_wrong_tag() {
+        let input = vec![SEQUENCE, 0];
+        let mut der = Der::new(&input);
+        assert!(der.read(INTEGER).is_err());
+    }
+
+    #[test]
+    fn der_test_truncated_two_byte_length() {
+        let input = vec![SEQUENCE, 0x81];
+        let mut der = Der::new(&input);
+        assert!(der.read(SEQUENCE).is_err());
+    }
+
+    #[test]
+    fn der_test_truncated_three_byte_length() {
+        let input = vec![SEQUENCE, 0x82, 1];
+        let mut der = Der::new(&input);
+        assert!(der.read(SEQUENCE).is_err());
+    }
+
+    #[test]
+    fn der_test_truncated_data() {
+        let input = vec![SEQUENCE, 20, 1];
+        let mut der = Der::new(&input);
+        assert!(der.read(SEQUENCE).is_err());
+    }
+
+    #[test]
+    fn der_test_not_shortest_two_byte_length_encoding() {
+        let input = vec![SEQUENCE, 0x81, 1, 1];
+        let mut der = Der::new(&input);
+        assert!(der.read(SEQUENCE).is_err());
+    }
+
+    #[test]
+    fn der_test_not_shortest_three_byte_length_encoding() {
+        let input = vec![SEQUENCE, 0x82, 0, 1, 1];
+        let mut der = Der::new(&input);
+        assert!(der.read(SEQUENCE).is_err());
+    }
+
+    #[test]
+    fn empty_input_fails() {
+        let empty = Vec::new();
+        assert!(read_rsa_modulus(&empty).is_err());
+        assert!(read_ec_sig_point(&empty).is_err());
+    }
+
+    #[test]
+    fn empty_sequence_fails() {
+        let empty = vec![SEQUENCE | CONSTRUCTED];
+        assert!(read_rsa_modulus(&empty).is_err());
+        assert!(read_ec_sig_point(&empty).is_err());
+    }
+}
