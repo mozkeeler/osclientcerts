@@ -1,6 +1,4 @@
-#![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-#![allow(unused_variables)]
 
 extern crate byteorder;
 extern crate env_logger;
@@ -8,20 +6,20 @@ extern crate env_logger;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
+extern crate pkcs11;
 extern crate sha2;
 #[cfg(target_os = "windows")]
 extern crate winapi;
 
+use pkcs11::types::*;
 use std::sync::Mutex;
 
 #[cfg(target_os = "windows")]
 mod backend_windows;
-mod der;
 mod manager;
-mod types;
+mod util;
 
 use manager::Manager;
-use types::*;
 
 lazy_static! {
     /// The singleton `Manager` that handles state with respect to PKCS #11. Only one thread may
@@ -49,14 +47,14 @@ macro_rules! try_to_get_manager {
 
 /// This gets called to initialize the module. For this implementation, this consists of
 /// instantiating the `Manager`.
-extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
+extern "C" fn C_Initialize(_pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
     // Getting the manager initializes our logging, so do it first.
     let manager = try_to_get_manager!();
     debug!("C_Initialize: CKR_OK");
     CKR_OK
 }
 
-extern "C" fn C_Finalize(pReserved: CK_VOID_PTR) -> CK_RV {
+extern "C" fn C_Finalize(_pReserved: CK_VOID_PTR) -> CK_RV {
     debug!("C_Finalize: CKR_OK");
     CKR_OK
 }
@@ -82,7 +80,7 @@ const SLOT_ID: CK_SLOT_ID = 1;
 /// This gets called twice: once with a null `pSlotList` to get the number of slots (returned via
 /// `pulCount`) and a second time to get the ID for each slot.
 extern "C" fn C_GetSlotList(
-    tokenPresent: CK_BBOOL,
+    _tokenPresent: CK_BBOOL,
     pSlotList: CK_SLOT_ID_PTR,
     pulCount: CK_ULONG_PTR,
 ) -> CK_RV {
@@ -115,11 +113,13 @@ extern "C" fn C_GetSlotInfo(slotID: CK_SLOT_ID, pInfo: CK_SLOT_INFO_PTR) -> CK_R
         error!("C_GetSlotInfo: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let slot_info = CK_SLOT_INFO::new(
-        *b"OS Client Cert Slot                                             ",
-        *b"Mozilla Corporation             ",
-        CKF_TOKEN_PRESENT,
-    );
+    let slot_info = CK_SLOT_INFO {
+        slotDescription: *b"OS Client Cert Slot                                             ",
+        manufacturerID: *b"Mozilla Corporation             ",
+        flags: CKF_TOKEN_PRESENT,
+        hardwareVersion: CK_VERSION::default(),
+        firmwareVersion: CK_VERSION::default(),
+    };
     unsafe {
         *pInfo = slot_info;
     }
@@ -167,39 +167,39 @@ extern "C" fn C_GetMechanismList(
 }
 
 extern "C" fn C_GetMechanismInfo(
-    slotID: CK_SLOT_ID,
-    type_: CK_MECHANISM_TYPE,
-    pInfo: CK_MECHANISM_INFO_PTR,
+    _slotID: CK_SLOT_ID,
+    _type: CK_MECHANISM_TYPE,
+    _pInfo: CK_MECHANISM_INFO_PTR,
 ) -> CK_RV {
     error!("C_GetMechanismInfo: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_InitToken(
-    slotID: CK_SLOT_ID,
-    pPin: CK_UTF8CHAR_PTR,
-    ulPinLen: CK_ULONG,
-    pLabel: CK_UTF8CHAR_PTR,
+    _slotID: CK_SLOT_ID,
+    _pPin: CK_UTF8CHAR_PTR,
+    _ulPinLen: CK_ULONG,
+    _pLabel: CK_UTF8CHAR_PTR,
 ) -> CK_RV {
     error!("C_InitToken: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_InitPIN(
-    hSession: CK_SESSION_HANDLE,
-    pPin: CK_UTF8CHAR_PTR,
-    ulPinLen: CK_ULONG,
+    _hSession: CK_SESSION_HANDLE,
+    _pPin: CK_UTF8CHAR_PTR,
+    _ulPinLen: CK_ULONG,
 ) -> CK_RV {
     error!("C_InitPIN: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_SetPIN(
-    hSession: CK_SESSION_HANDLE,
-    pOldPin: CK_UTF8CHAR_PTR,
-    ulOldLen: CK_ULONG,
-    pNewPin: CK_UTF8CHAR_PTR,
-    ulNewLen: CK_ULONG,
+    _hSession: CK_SESSION_HANDLE,
+    _pOldPin: CK_UTF8CHAR_PTR,
+    _ulOldLen: CK_ULONG,
+    _pNewPin: CK_UTF8CHAR_PTR,
+    _ulNewLen: CK_ULONG,
 ) -> CK_RV {
     error!("C_SetPIN: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
@@ -208,9 +208,9 @@ extern "C" fn C_SetPIN(
 /// This gets called to create a new session. This module defers to the `Manager` to implement this.
 extern "C" fn C_OpenSession(
     slotID: CK_SLOT_ID,
-    flags: CK_FLAGS,
-    pApplication: CK_VOID_PTR,
-    Notify: CK_NOTIFY,
+    _flags: CK_FLAGS,
+    _pApplication: CK_VOID_PTR,
+    _Notify: CK_NOTIFY,
     phSession: CK_SESSION_HANDLE_PTR,
 ) -> CK_RV {
     if slotID != SLOT_ID || phSession.is_null() {
@@ -249,36 +249,36 @@ extern "C" fn C_CloseAllSessions(slotID: CK_SLOT_ID) -> CK_RV {
     CKR_OK
 }
 
-extern "C" fn C_GetSessionInfo(hSession: CK_SESSION_HANDLE, pInfo: CK_SESSION_INFO_PTR) -> CK_RV {
+extern "C" fn C_GetSessionInfo(_hSession: CK_SESSION_HANDLE, _pInfo: CK_SESSION_INFO_PTR) -> CK_RV {
     error!("C_GetSessionInfo: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_GetOperationState(
-    hSession: CK_SESSION_HANDLE,
-    pOperationState: CK_BYTE_PTR,
-    pulOperationStateLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pOperationState: CK_BYTE_PTR,
+    _pulOperationStateLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_GetOperationState: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_SetOperationState(
-    hSession: CK_SESSION_HANDLE,
-    pOperationState: CK_BYTE_PTR,
-    ulOperationStateLen: CK_ULONG,
-    hEncryptionKey: CK_OBJECT_HANDLE,
-    hAuthenticationKey: CK_OBJECT_HANDLE,
+    _hSession: CK_SESSION_HANDLE,
+    _pOperationState: CK_BYTE_PTR,
+    _ulOperationStateLen: CK_ULONG,
+    _hEncryptionKey: CK_OBJECT_HANDLE,
+    _hAuthenticationKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
     error!("C_SetOperationState: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_Login(
-    hSession: CK_SESSION_HANDLE,
-    userType: CK_USER_TYPE,
-    pPin: CK_UTF8CHAR_PTR,
-    ulPinLen: CK_ULONG,
+    _hSession: CK_SESSION_HANDLE,
+    _userType: CK_USER_TYPE,
+    _pPin: CK_UTF8CHAR_PTR,
+    _ulPinLen: CK_ULONG,
 ) -> CK_RV {
     error!("C_Login: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
@@ -287,41 +287,41 @@ extern "C" fn C_Login(
 /// This gets called to log out and drop any authenticated resources. Because this module does not
 /// hold on to authenticated resources, this module "implements" this by doing nothing and
 /// returning a success result.
-extern "C" fn C_Logout(hSession: CK_SESSION_HANDLE) -> CK_RV {
+extern "C" fn C_Logout(_hSession: CK_SESSION_HANDLE) -> CK_RV {
     debug!("C_Logout: CKR_OK");
     CKR_OK
 }
 
 extern "C" fn C_CreateObject(
-    hSession: CK_SESSION_HANDLE,
-    pTemplate: CK_ATTRIBUTE_PTR,
-    ulCount: CK_ULONG,
-    phObject: CK_OBJECT_HANDLE_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pTemplate: CK_ATTRIBUTE_PTR,
+    _ulCount: CK_ULONG,
+    _phObject: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
     error!("C_CreateObject: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_CopyObject(
-    hSession: CK_SESSION_HANDLE,
-    hObject: CK_OBJECT_HANDLE,
-    pTemplate: CK_ATTRIBUTE_PTR,
-    ulCount: CK_ULONG,
-    phNewObject: CK_OBJECT_HANDLE_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _hObject: CK_OBJECT_HANDLE,
+    _pTemplate: CK_ATTRIBUTE_PTR,
+    _ulCount: CK_ULONG,
+    _phNewObject: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
     error!("C_CopyObject: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
-extern "C" fn C_DestroyObject(hSession: CK_SESSION_HANDLE, hObject: CK_OBJECT_HANDLE) -> CK_RV {
+extern "C" fn C_DestroyObject(_hSession: CK_SESSION_HANDLE, _hObject: CK_OBJECT_HANDLE) -> CK_RV {
     error!("C_DestroyObject: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_GetObjectSize(
-    hSession: CK_SESSION_HANDLE,
-    hObject: CK_OBJECT_HANDLE,
-    pulSize: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _hObject: CK_OBJECT_HANDLE,
+    _pulSize: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_GetObjectSize: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
@@ -334,7 +334,7 @@ extern "C" fn C_GetObjectSize(
 /// This gets called twice: once to obtain the lengths of the attributes and again to get the
 /// values.
 extern "C" fn C_GetAttributeValue(
-    hSession: CK_SESSION_HANDLE,
+    _hSession: CK_SESSION_HANDLE,
     hObject: CK_OBJECT_HANDLE,
     pTemplate: CK_ATTRIBUTE_PTR,
     ulCount: CK_ULONG,
@@ -354,7 +354,7 @@ extern "C" fn C_GetAttributeValue(
     };
     for i in 0..ulCount {
         let mut attr = unsafe { &mut *pTemplate.offset(i as isize) };
-        if let Some(attr_value) = object.get_attribute(attr.type_) {
+        if let Some(attr_value) = object.get_attribute(attr.attrType) {
             if attr.pValue.is_null() {
                 attr.ulValueLen = attr_value.len() as CK_ULONG;
             } else {
@@ -376,10 +376,10 @@ extern "C" fn C_GetAttributeValue(
 }
 
 extern "C" fn C_SetAttributeValue(
-    hSession: CK_SESSION_HANDLE,
-    hObject: CK_OBJECT_HANDLE,
-    pTemplate: CK_ATTRIBUTE_PTR,
-    ulCount: CK_ULONG,
+    _hSession: CK_SESSION_HANDLE,
+    _hObject: CK_OBJECT_HANDLE,
+    _pTemplate: CK_ATTRIBUTE_PTR,
+    _ulCount: CK_ULONG,
 ) -> CK_RV {
     error!("C_SetAttributeValue: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
@@ -398,14 +398,14 @@ extern "C" fn C_FindObjectsInit(
         return CKR_ARGUMENTS_BAD;
     }
     let mut attrs = Vec::new();
-    debug!("C_FindObjectsInit:");
+    info!("C_FindObjectsInit:");
     for i in 0..ulCount {
         let attr = unsafe { &*pTemplate.offset(i as isize) };
-        debug!("  {}", attr);
+        info!("  {:?}", attr);
         let slice = unsafe {
             std::slice::from_raw_parts(attr.pValue as *const u8, attr.ulValueLen as usize)
         };
-        attrs.push((attr.type_, slice.to_owned()));
+        attrs.push((attr.attrType, slice.to_owned()));
     }
     let mut manager = try_to_get_manager!();
     match manager.start_search(hSession, &attrs) {
@@ -469,119 +469,119 @@ extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {
 }
 
 extern "C" fn C_EncryptInit(
-    hSession: CK_SESSION_HANDLE,
-    pMechanism: CK_MECHANISM_PTR,
-    hKey: CK_OBJECT_HANDLE,
+    _hSession: CK_SESSION_HANDLE,
+    _pMechanism: CK_MECHANISM_PTR,
+    _hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
     error!("C_EncryptInit: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_Encrypt(
-    hSession: CK_SESSION_HANDLE,
-    pData: CK_BYTE_PTR,
-    ulDataLen: CK_ULONG,
-    pEncryptedData: CK_BYTE_PTR,
-    pulEncryptedDataLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pData: CK_BYTE_PTR,
+    _ulDataLen: CK_ULONG,
+    _pEncryptedData: CK_BYTE_PTR,
+    _pulEncryptedDataLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_Encrypt: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_EncryptUpdate(
-    hSession: CK_SESSION_HANDLE,
-    pPart: CK_BYTE_PTR,
-    ulPartLen: CK_ULONG,
-    pEncryptedPart: CK_BYTE_PTR,
-    pulEncryptedPartLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pPart: CK_BYTE_PTR,
+    _ulPartLen: CK_ULONG,
+    _pEncryptedPart: CK_BYTE_PTR,
+    _pulEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_EncryptUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_EncryptFinal(
-    hSession: CK_SESSION_HANDLE,
-    pLastEncryptedPart: CK_BYTE_PTR,
-    pulLastEncryptedPartLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pLastEncryptedPart: CK_BYTE_PTR,
+    _pulLastEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_EncryptFinal: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_DecryptInit(
-    hSession: CK_SESSION_HANDLE,
-    pMechanism: CK_MECHANISM_PTR,
-    hKey: CK_OBJECT_HANDLE,
+    _hSession: CK_SESSION_HANDLE,
+    _pMechanism: CK_MECHANISM_PTR,
+    _hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
     error!("C_DecryptInit: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_Decrypt(
-    hSession: CK_SESSION_HANDLE,
-    pEncryptedData: CK_BYTE_PTR,
-    ulEncryptedDataLen: CK_ULONG,
-    pData: CK_BYTE_PTR,
-    pulDataLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pEncryptedData: CK_BYTE_PTR,
+    _ulEncryptedDataLen: CK_ULONG,
+    _pData: CK_BYTE_PTR,
+    _pulDataLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_Decrypt: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_DecryptUpdate(
-    hSession: CK_SESSION_HANDLE,
-    pEncryptedPart: CK_BYTE_PTR,
-    ulEncryptedPartLen: CK_ULONG,
-    pPart: CK_BYTE_PTR,
-    pulPartLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pEncryptedPart: CK_BYTE_PTR,
+    _ulEncryptedPartLen: CK_ULONG,
+    _pPart: CK_BYTE_PTR,
+    _pulPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_DecryptUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_DecryptFinal(
-    hSession: CK_SESSION_HANDLE,
-    pLastPart: CK_BYTE_PTR,
-    pulLastPartLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pLastPart: CK_BYTE_PTR,
+    _pulLastPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_DecryptFinal: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
-extern "C" fn C_DigestInit(hSession: CK_SESSION_HANDLE, pMechanism: CK_MECHANISM_PTR) -> CK_RV {
+extern "C" fn C_DigestInit(_hSession: CK_SESSION_HANDLE, _pMechanism: CK_MECHANISM_PTR) -> CK_RV {
     error!("C_DigestInit: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_Digest(
-    hSession: CK_SESSION_HANDLE,
-    pData: CK_BYTE_PTR,
-    ulDataLen: CK_ULONG,
-    pDigest: CK_BYTE_PTR,
-    pulDigestLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pData: CK_BYTE_PTR,
+    _ulDataLen: CK_ULONG,
+    _pDigest: CK_BYTE_PTR,
+    _pulDigestLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_Digest: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_DigestUpdate(
-    hSession: CK_SESSION_HANDLE,
-    pPart: CK_BYTE_PTR,
-    ulPartLen: CK_ULONG,
+    _hSession: CK_SESSION_HANDLE,
+    _pPart: CK_BYTE_PTR,
+    _ulPartLen: CK_ULONG,
 ) -> CK_RV {
     error!("C_DigestUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
-extern "C" fn C_DigestKey(hSession: CK_SESSION_HANDLE, hKey: CK_OBJECT_HANDLE) -> CK_RV {
+extern "C" fn C_DigestKey(_hSession: CK_SESSION_HANDLE, _hKey: CK_OBJECT_HANDLE) -> CK_RV {
     error!("C_DigestKey: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_DigestFinal(
-    hSession: CK_SESSION_HANDLE,
-    pDigest: CK_BYTE_PTR,
-    pulDigestLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pDigest: CK_BYTE_PTR,
+    _pulDigestLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_DigestFinal: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
@@ -652,240 +652,240 @@ extern "C" fn C_Sign(
 }
 
 extern "C" fn C_SignUpdate(
-    hSession: CK_SESSION_HANDLE,
-    pPart: CK_BYTE_PTR,
-    ulPartLen: CK_ULONG,
+    _hSession: CK_SESSION_HANDLE,
+    _pPart: CK_BYTE_PTR,
+    _ulPartLen: CK_ULONG,
 ) -> CK_RV {
     error!("C_SignUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_SignFinal(
-    hSession: CK_SESSION_HANDLE,
-    pSignature: CK_BYTE_PTR,
-    pulSignatureLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pSignature: CK_BYTE_PTR,
+    _pulSignatureLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_SignFinal: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_SignRecoverInit(
-    hSession: CK_SESSION_HANDLE,
-    pMechanism: CK_MECHANISM_PTR,
-    hKey: CK_OBJECT_HANDLE,
+    _hSession: CK_SESSION_HANDLE,
+    _pMechanism: CK_MECHANISM_PTR,
+    _hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
     error!("C_SignRecoverInit: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_SignRecover(
-    hSession: CK_SESSION_HANDLE,
-    pData: CK_BYTE_PTR,
-    ulDataLen: CK_ULONG,
-    pSignature: CK_BYTE_PTR,
-    pulSignatureLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pData: CK_BYTE_PTR,
+    _ulDataLen: CK_ULONG,
+    _pSignature: CK_BYTE_PTR,
+    _pulSignatureLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_SignRecover: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_VerifyInit(
-    hSession: CK_SESSION_HANDLE,
-    pMechanism: CK_MECHANISM_PTR,
-    hKey: CK_OBJECT_HANDLE,
+    _hSession: CK_SESSION_HANDLE,
+    _pMechanism: CK_MECHANISM_PTR,
+    _hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
     error!("C_VerifyInit: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_Verify(
-    hSession: CK_SESSION_HANDLE,
-    pData: CK_BYTE_PTR,
-    ulDataLen: CK_ULONG,
-    pSignature: CK_BYTE_PTR,
-    ulSignatureLen: CK_ULONG,
+    _hSession: CK_SESSION_HANDLE,
+    _pData: CK_BYTE_PTR,
+    _ulDataLen: CK_ULONG,
+    _pSignature: CK_BYTE_PTR,
+    _ulSignatureLen: CK_ULONG,
 ) -> CK_RV {
     error!("C_Verify: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_VerifyUpdate(
-    hSession: CK_SESSION_HANDLE,
-    pPart: CK_BYTE_PTR,
-    ulPartLen: CK_ULONG,
+    _hSession: CK_SESSION_HANDLE,
+    _pPart: CK_BYTE_PTR,
+    _ulPartLen: CK_ULONG,
 ) -> CK_RV {
     error!("C_VerifyUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_VerifyFinal(
-    hSession: CK_SESSION_HANDLE,
-    pSignature: CK_BYTE_PTR,
-    ulSignatureLen: CK_ULONG,
+    _hSession: CK_SESSION_HANDLE,
+    _pSignature: CK_BYTE_PTR,
+    _ulSignatureLen: CK_ULONG,
 ) -> CK_RV {
     error!("C_VerifyFinal: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_VerifyRecoverInit(
-    hSession: CK_SESSION_HANDLE,
-    pMechanism: CK_MECHANISM_PTR,
-    hKey: CK_OBJECT_HANDLE,
+    _hSession: CK_SESSION_HANDLE,
+    _pMechanism: CK_MECHANISM_PTR,
+    _hKey: CK_OBJECT_HANDLE,
 ) -> CK_RV {
     error!("C_VerifyRecoverInit: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_VerifyRecover(
-    hSession: CK_SESSION_HANDLE,
-    pSignature: CK_BYTE_PTR,
-    ulSignatureLen: CK_ULONG,
-    pData: CK_BYTE_PTR,
-    pulDataLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pSignature: CK_BYTE_PTR,
+    _ulSignatureLen: CK_ULONG,
+    _pData: CK_BYTE_PTR,
+    _pulDataLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_VerifyRecover: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_DigestEncryptUpdate(
-    hSession: CK_SESSION_HANDLE,
-    pPart: CK_BYTE_PTR,
-    ulPartLen: CK_ULONG,
-    pEncryptedPart: CK_BYTE_PTR,
-    pulEncryptedPartLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pPart: CK_BYTE_PTR,
+    _ulPartLen: CK_ULONG,
+    _pEncryptedPart: CK_BYTE_PTR,
+    _pulEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_DigestEncryptUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_DecryptDigestUpdate(
-    hSession: CK_SESSION_HANDLE,
-    pEncryptedPart: CK_BYTE_PTR,
-    ulEncryptedPartLen: CK_ULONG,
-    pPart: CK_BYTE_PTR,
-    pulPartLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pEncryptedPart: CK_BYTE_PTR,
+    _ulEncryptedPartLen: CK_ULONG,
+    _pPart: CK_BYTE_PTR,
+    _pulPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_DecryptDigestUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_SignEncryptUpdate(
-    hSession: CK_SESSION_HANDLE,
-    pPart: CK_BYTE_PTR,
-    ulPartLen: CK_ULONG,
-    pEncryptedPart: CK_BYTE_PTR,
-    pulEncryptedPartLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pPart: CK_BYTE_PTR,
+    _ulPartLen: CK_ULONG,
+    _pEncryptedPart: CK_BYTE_PTR,
+    _pulEncryptedPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_SignEncryptUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_DecryptVerifyUpdate(
-    hSession: CK_SESSION_HANDLE,
-    pEncryptedPart: CK_BYTE_PTR,
-    ulEncryptedPartLen: CK_ULONG,
-    pPart: CK_BYTE_PTR,
-    pulPartLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pEncryptedPart: CK_BYTE_PTR,
+    _ulEncryptedPartLen: CK_ULONG,
+    _pPart: CK_BYTE_PTR,
+    _pulPartLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_DecryptVerifyUpdate: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_GenerateKey(
-    hSession: CK_SESSION_HANDLE,
-    pMechanism: CK_MECHANISM_PTR,
-    pTemplate: CK_ATTRIBUTE_PTR,
-    ulCount: CK_ULONG,
-    phKey: CK_OBJECT_HANDLE_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pMechanism: CK_MECHANISM_PTR,
+    _pTemplate: CK_ATTRIBUTE_PTR,
+    _ulCount: CK_ULONG,
+    _phKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
     error!("C_GenerateKey: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_GenerateKeyPair(
-    hSession: CK_SESSION_HANDLE,
-    pMechanism: CK_MECHANISM_PTR,
-    pPublicKeyTemplate: CK_ATTRIBUTE_PTR,
-    ulPublicKeyAttributeCount: CK_ULONG,
-    pPrivateKeyTemplate: CK_ATTRIBUTE_PTR,
-    ulPrivateKeyAttributeCount: CK_ULONG,
-    phPublicKey: CK_OBJECT_HANDLE_PTR,
-    phPrivateKey: CK_OBJECT_HANDLE_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pMechanism: CK_MECHANISM_PTR,
+    _pPublicKeyTemplate: CK_ATTRIBUTE_PTR,
+    _ulPublicKeyAttributeCount: CK_ULONG,
+    _pPrivateKeyTemplate: CK_ATTRIBUTE_PTR,
+    _ulPrivateKeyAttributeCount: CK_ULONG,
+    _phPublicKey: CK_OBJECT_HANDLE_PTR,
+    _phPrivateKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
     error!("C_GenerateKeyPair: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_WrapKey(
-    hSession: CK_SESSION_HANDLE,
-    pMechanism: CK_MECHANISM_PTR,
-    hWrappingKey: CK_OBJECT_HANDLE,
-    hKey: CK_OBJECT_HANDLE,
-    pWrappedKey: CK_BYTE_PTR,
-    pulWrappedKeyLen: CK_ULONG_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pMechanism: CK_MECHANISM_PTR,
+    _hWrappingKey: CK_OBJECT_HANDLE,
+    _hKey: CK_OBJECT_HANDLE,
+    _pWrappedKey: CK_BYTE_PTR,
+    _pulWrappedKeyLen: CK_ULONG_PTR,
 ) -> CK_RV {
     error!("C_WrapKey: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_UnwrapKey(
-    hSession: CK_SESSION_HANDLE,
-    pMechanism: CK_MECHANISM_PTR,
-    hUnwrappingKey: CK_OBJECT_HANDLE,
-    pWrappedKey: CK_BYTE_PTR,
-    ulWrappedKeyLen: CK_ULONG,
-    pTemplate: CK_ATTRIBUTE_PTR,
-    ulAttributeCount: CK_ULONG,
-    phKey: CK_OBJECT_HANDLE_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pMechanism: CK_MECHANISM_PTR,
+    _hUnwrappingKey: CK_OBJECT_HANDLE,
+    _pWrappedKey: CK_BYTE_PTR,
+    _ulWrappedKeyLen: CK_ULONG,
+    _pTemplate: CK_ATTRIBUTE_PTR,
+    _ulAttributeCount: CK_ULONG,
+    _phKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
     error!("C_UnwrapKey: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_DeriveKey(
-    hSession: CK_SESSION_HANDLE,
-    pMechanism: CK_MECHANISM_PTR,
-    hBaseKey: CK_OBJECT_HANDLE,
-    pTemplate: CK_ATTRIBUTE_PTR,
-    ulAttributeCount: CK_ULONG,
-    phKey: CK_OBJECT_HANDLE_PTR,
+    _hSession: CK_SESSION_HANDLE,
+    _pMechanism: CK_MECHANISM_PTR,
+    _hBaseKey: CK_OBJECT_HANDLE,
+    _pTemplate: CK_ATTRIBUTE_PTR,
+    _ulAttributeCount: CK_ULONG,
+    _phKey: CK_OBJECT_HANDLE_PTR,
 ) -> CK_RV {
     error!("C_DeriveKey: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_SeedRandom(
-    hSession: CK_SESSION_HANDLE,
-    pSeed: CK_BYTE_PTR,
-    ulSeedLen: CK_ULONG,
+    _hSession: CK_SESSION_HANDLE,
+    _pSeed: CK_BYTE_PTR,
+    _ulSeedLen: CK_ULONG,
 ) -> CK_RV {
     error!("C_SeedRandom: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_GenerateRandom(
-    hSession: CK_SESSION_HANDLE,
-    RandomData: CK_BYTE_PTR,
-    ulRandomLen: CK_ULONG,
+    _hSession: CK_SESSION_HANDLE,
+    _RandomData: CK_BYTE_PTR,
+    _ulRandomLen: CK_ULONG,
 ) -> CK_RV {
     error!("C_GenerateRandom: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
-extern "C" fn C_GetFunctionStatus(hSession: CK_SESSION_HANDLE) -> CK_RV {
+extern "C" fn C_GetFunctionStatus(_hSession: CK_SESSION_HANDLE) -> CK_RV {
     error!("C_GetFunctionStatus: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
-extern "C" fn C_CancelFunction(hSession: CK_SESSION_HANDLE) -> CK_RV {
+extern "C" fn C_CancelFunction(_hSession: CK_SESSION_HANDLE) -> CK_RV {
     error!("C_CancelFunction: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
 }
 
 extern "C" fn C_WaitForSlotEvent(
-    flags: CK_FLAGS,
-    pSlot: CK_SLOT_ID_PTR,
-    pRserved: CK_VOID_PTR,
+    _flags: CK_FLAGS,
+    _pSlot: CK_SLOT_ID_PTR,
+    _pRserved: CK_VOID_PTR,
 ) -> CK_RV {
     error!("C_WaitForSlotEvent: CKR_FUNCTION_NOT_SUPPORTED");
     CKR_FUNCTION_NOT_SUPPORTED
@@ -893,7 +893,7 @@ extern "C" fn C_WaitForSlotEvent(
 
 /// To be a valid PKCS #11 module, this list of functions must be supported. At least cryptoki 2.2
 /// must be supported for this module to work in NSS.
-static FUNCTION_LIST: CK_FUNCTION_LIST = CK_FUNCTION_LIST {
+static mut FUNCTION_LIST: CK_FUNCTION_LIST = CK_FUNCTION_LIST {
     version: CK_VERSION { major: 2, minor: 2 },
     C_Initialize: Some(C_Initialize),
     C_Finalize: Some(C_Finalize),
@@ -970,7 +970,7 @@ static FUNCTION_LIST: CK_FUNCTION_LIST = CK_FUNCTION_LIST {
 #[no_mangle]
 pub extern "C" fn C_GetFunctionList(ppFunctionList: CK_FUNCTION_LIST_PTR_PTR) -> CK_RV {
     unsafe {
-        *ppFunctionList = &FUNCTION_LIST;
+        *ppFunctionList = &mut FUNCTION_LIST;
     }
     CKR_OK
 }

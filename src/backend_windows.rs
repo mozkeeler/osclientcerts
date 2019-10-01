@@ -1,5 +1,6 @@
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
+use pkcs11::types::*;
 use sha2::{Digest, Sha256};
 use std::convert::TryInto;
 use std::ffi::{CStr, CString};
@@ -9,8 +10,7 @@ use winapi::shared::bcrypt::*;
 use winapi::um::ncrypt::*;
 use winapi::um::wincrypt::*;
 
-use crate::der::*;
-use crate::types::*;
+use crate::util::*;
 
 /// Given a `CERT_INFO`, tries to return the bytes of the subject distinguished name as formatted by
 /// `CertNameToStrA` using the flag `CERT_SIMPLE_NAME_STR`. This is used as the label for the
@@ -88,8 +88,8 @@ impl Cert {
         };
         let subject = subject.to_vec();
         Ok(Cert {
-            class: serialize_uint(CKO_CERTIFICATE),
-            token: serialize_uint(CK_TRUE),
+            class: serialize_uint(CKO_CERTIFICATE)?,
+            token: serialize_uint(CK_TRUE)?,
             id,
             label,
             value,
@@ -310,11 +310,11 @@ impl Key {
         };
         Ok(Key {
             cert: CertContext::new(cert_context),
-            class: serialize_uint(CKO_PRIVATE_KEY),
-            token: serialize_uint(CK_TRUE),
+            class: serialize_uint(CKO_PRIVATE_KEY)?,
+            token: serialize_uint(CK_TRUE)?,
             id,
-            private: serialize_uint(CK_TRUE),
-            key_type: serialize_uint(key_type_attribute),
+            private: serialize_uint(CK_TRUE)?,
+            key_type: serialize_uint(key_type_attribute)?,
             modulus,
             ec_params,
             key_type_enum,

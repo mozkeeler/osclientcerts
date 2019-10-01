@@ -1,8 +1,8 @@
+use pkcs11::types::*;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(target_os = "windows")]
 use crate::backend_windows as backend;
-use crate::types::*;
 use backend::*;
 
 /// The `Manager` keeps track of the state of this module with respect to the PKCS #11
@@ -178,8 +178,8 @@ impl Manager {
         if self.signs.contains_key(&session) {
             return Err(());
         }
-        let key = match self.objects.get(&key_handle) {
-            Some(Object::Key(key)) => key,
+        match self.objects.get(&key_handle) {
+            Some(Object::Key(_)) => {}
             _ => return Err(()),
         };
         self.signs.insert(session, key_handle);
