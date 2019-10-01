@@ -1,4 +1,17 @@
-use byteorder::{BigEndian, ReadBytesExt};
+use byteorder::{BigEndian, NativeEndian, ReadBytesExt, WriteBytesExt};
+use std::convert::TryInto;
+
+// This is a helper function to take a value and lay it out in memory how
+// PKCS#11 is expecting it.
+pub fn serialize_uint<T: TryInto<u64>>(value: T) -> Result<Vec<u8>, ()> {
+    let value_size = std::mem::size_of::<T>();
+    let mut value_buf = Vec::with_capacity(value_size);
+    let value_as_u64 = value.try_into().map_err(|_| ())?;
+    value_buf
+        .write_uint::<NativeEndian>(value_as_u64, value_size)
+        .map_err(|_| ())?;
+    Ok(value_buf)
+}
 
 /// Given a slice of DER bytes representing an RSA public key, extracts the bytes of the modulus
 /// as an unsigned integer. Also verifies that the public exponent is present (again as an
@@ -11,7 +24,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 pub fn read_rsa_modulus(public_key: &[u8]) -> Result<Vec<u8>, ()> {
     let mut sequence = Sequence::new(public_key)?;
     let modulus_value = sequence.read_unsigned_integer()?;
-    let exponent = sequence.read_unsigned_integer()?;
+    let _exponent = sequence.read_unsigned_integer()?;
     if !sequence.at_end() {
         return Err(());
     }

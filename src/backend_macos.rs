@@ -1,6 +1,7 @@
 #![allow(non_upper_case_globals)]
 #![allow(dead_code)]
 
+use pkcs11::types::*;
 use sha2::{Digest, Sha256};
 use std::os::raw::c_void;
 
@@ -18,8 +19,7 @@ use core_foundation::string::*;
 // etc.. This is easier.
 include!("bindings_macos.rs");
 
-use crate::der::*;
-use crate::types::*;
+use crate::util::*;
 
 #[repr(C)]
 pub struct __SecIdentity(c_void);
@@ -103,9 +103,14 @@ impl Cert {
             ))
         };
 
+        debug!(
+            "returning Cert with label '{}', id '{:x?}'",
+            label.to_string(),
+            id
+        );
         Ok(Cert {
-            class: serialize_uint(CKO_CERTIFICATE),
-            token: serialize_uint(CK_TRUE),
+            class: serialize_uint(CKO_CERTIFICATE)?,
+            token: serialize_uint(CK_TRUE)?,
             id,
             label: label.to_string().into_bytes(),
             value: der.bytes().to_vec(),
@@ -267,13 +272,14 @@ impl Key {
                 return Err(());
             };
 
+        debug!("returning Key with id '{:x?}'", id);
         Ok(Key {
             identity: SecIdentityHolder(identity.clone()),
-            class: serialize_uint(CKO_PRIVATE_KEY),
-            token: serialize_uint(CK_TRUE),
+            class: serialize_uint(CKO_PRIVATE_KEY)?,
+            token: serialize_uint(CK_TRUE)?,
             id,
-            private: serialize_uint(CK_TRUE),
-            key_type: serialize_uint(key_type_attribute),
+            private: serialize_uint(CK_TRUE)?,
+            key_type: serialize_uint(key_type_attribute)?,
             modulus,
             ec_params,
             key_type_enum,

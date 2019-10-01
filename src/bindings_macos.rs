@@ -399,6 +399,7 @@ pub const errSecTimestampRejection: _bindgen_ty_8 = -67895;
 pub const errSecTimestampWaiting: _bindgen_ty_8 = -67896;
 pub const errSecTimestampRevocationWarning: _bindgen_ty_8 = -67897;
 pub const errSecTimestampRevocationNotification: _bindgen_ty_8 = -67898;
+#[allow(non_camel_case_types)]
 pub type _bindgen_ty_8 = i32;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
