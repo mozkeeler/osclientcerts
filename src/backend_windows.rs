@@ -395,7 +395,7 @@ impl Key {
             CKA_KEY_TYPE => Some(self.key_type()),
             CKA_MODULUS => self.modulus(),
             CKA_EC_PARAMS => self.ec_params(),
-            _ => return None,
+            _ => None,
         }
     }
 
