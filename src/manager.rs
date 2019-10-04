@@ -141,7 +141,14 @@ impl Manager {
                     search.len() - max_objects
                 };
                 let to_return = search.split_off(split_at);
-                assert!(to_return.len() <= max_objects);
+                if to_return.len() > max_objects {
+                    error!(
+                        "search trying to return too many handles: {} > {}",
+                        to_return.len(),
+                        max_objects
+                    );
+                    return Err(());
+                }
                 Ok(to_return)
             }
             None => Err(()),

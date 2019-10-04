@@ -322,11 +322,19 @@ impl Key {
                 CKA_ID => self.id(),
                 CKA_PRIVATE => self.private(),
                 CKA_KEY_TYPE => self.key_type(),
-                CKA_MODULUS if self.modulus().is_some() => {
-                    self.modulus().expect("modulus not Some?")
+                CKA_MODULUS => {
+                    if let Some(modulus) = self.modulus() {
+                        modulus
+                    } else {
+                        return false;
+                    }
                 }
-                CKA_EC_PARAMS if self.ec_params().is_some() => {
-                    self.ec_params().expect("ec_params not Some?")
+                CKA_EC_PARAMS => {
+                    if let Some(ec_params) = self.ec_params() {
+                        ec_params
+                    } else {
+                        return false;
+                    }
                 }
                 _ => return false,
             };
@@ -338,19 +346,16 @@ impl Key {
     }
 
     fn get_attribute(&self, attribute: CK_ATTRIBUTE_TYPE) -> Option<&[u8]> {
-        let result = match attribute {
-            CKA_CLASS => self.class(),
-            CKA_TOKEN => self.token(),
-            CKA_ID => self.id(),
-            CKA_PRIVATE => self.private(),
-            CKA_KEY_TYPE => self.key_type(),
-            CKA_MODULUS if self.modulus.is_some() => self.modulus().expect("modulus not Some?"),
-            CKA_EC_PARAMS if self.ec_params.is_some() => {
-                self.ec_params().expect("ec_params not Some?")
-            }
+        match attribute {
+            CKA_CLASS => Some(self.class()),
+            CKA_TOKEN => Some(self.token()),
+            CKA_ID => Some(self.id()),
+            CKA_PRIVATE => Some(self.private()),
+            CKA_KEY_TYPE => Some(self.key_type()),
+            CKA_MODULUS => self.modulus(),
+            CKA_EC_PARAMS => self.ec_params(),
             _ => return None,
-        };
-        Some(result)
+        }
     }
 
     // The input data is a hash. What algorithm we use depends on the size of the hash.

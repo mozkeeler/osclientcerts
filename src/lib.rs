@@ -37,11 +37,26 @@ lazy_static! {
     };
 }
 
+macro_rules! try_to_get_manager {
+    () => {
+        match MANAGER.lock() {
+            Ok(manager) => manager,
+            Err(poison_error) => {
+                error!(
+                    "previous thread panicked acquiring manager lock: {}",
+                    poison_error
+                );
+                return CKR_DEVICE_ERROR;
+            }
+        }
+    };
+}
+
 /// This gets called to initialize the module. For this implementation, this consists of
 /// instantiating the `Manager`.
 extern "C" fn C_Initialize(pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
     // Getting the manager initializes our logging, so do it first.
-    let manager = MANAGER.lock().unwrap();
+    let manager = try_to_get_manager!();
     debug!("C_Initialize: CKR_OK");
     CKR_OK
 }
@@ -207,7 +222,7 @@ extern "C" fn C_OpenSession(
         error!("C_OpenSession: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let mut manager = MANAGER.lock().unwrap();
+    let mut manager = try_to_get_manager!();
     let session_handle = manager.open_session();
     unsafe {
         *phSession = session_handle;
@@ -218,7 +233,7 @@ extern "C" fn C_OpenSession(
 
 /// This gets called to close a session. This is proxied to the `Manager`.
 extern "C" fn C_CloseSession(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    let mut manager = MANAGER.lock().unwrap();
+    let mut manager = try_to_get_manager!();
     if manager.close_session(hSession).is_err() {
         error!("C_CloseSession: CKR_SESSION_HANDLE_INVALID");
         return CKR_SESSION_HANDLE_INVALID;
@@ -233,7 +248,7 @@ extern "C" fn C_CloseAllSessions(slotID: CK_SLOT_ID) -> CK_RV {
         error!("C_CloseAllSessions: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let mut manager = MANAGER.lock().unwrap();
+    let mut manager = try_to_get_manager!();
     manager.close_all_sessions();
     debug!("C_CloseAllSessions: CKR_OK");
     CKR_OK
@@ -334,7 +349,7 @@ extern "C" fn C_GetAttributeValue(
         return CKR_ARGUMENTS_BAD;
     }
     // TODO: check hSession (do we actually need to?)
-    let mut manager = MANAGER.lock().unwrap();
+    let mut manager = try_to_get_manager!();
     let object = match manager.get_object(hObject) {
         Ok(object) => object,
         Err(()) => {
@@ -397,7 +412,7 @@ extern "C" fn C_FindObjectsInit(
         };
         attrs.push((attr.type_, slice.to_owned()));
     }
-    let mut manager = MANAGER.lock().unwrap();
+    let mut manager = try_to_get_manager!();
     match manager.start_search(hSession, &attrs) {
         Ok(()) => {}
         Err(()) => {
@@ -422,7 +437,7 @@ extern "C" fn C_FindObjects(
         error!("C_FindObjects: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let mut manager = MANAGER.lock().unwrap();
+    let mut manager = try_to_get_manager!();
     let handles = match manager.search(hSession, ulMaxObjectCount as usize) {
         Ok(handles) => handles,
         Err(()) => {
@@ -431,7 +446,10 @@ extern "C" fn C_FindObjects(
         }
     };
     debug!("C_FindObjects: found handles {:?}", handles);
-    assert!(handles.len() <= ulMaxObjectCount as usize);
+    if handles.len() > ulMaxObjectCount as usize {
+        error!("C_FindObjects: manager returned too many handles");
+        return CKR_DEVICE_ERROR;
+    }
     unsafe {
         *pulObjectCount = handles.len() as CK_ULONG;
     }
@@ -449,7 +467,7 @@ extern "C" fn C_FindObjects(
 /// This gets called after `C_FindObjectsInit` and `C_FindObjects` to finish a search. The module
 /// tells the `Manager` to clear the search.
 extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {
-    let mut manager = MANAGER.lock().unwrap();
+    let mut manager = try_to_get_manager!();
     manager.clear_search(hSession); // TODO: return error if there was no search?
     debug!("C_FindObjectsFinal: CKR_OK");
     CKR_OK
@@ -587,7 +605,7 @@ extern "C" fn C_SignInit(
     // pMechanism generally appears to be empty (just mechanism is set).
     // TODO: presumably we should validate it against hKey?
     debug!("{}", unsafe { *pMechanism });
-    let mut manager = MANAGER.lock().unwrap();
+    let mut manager = try_to_get_manager!();
     match manager.start_sign(hSession, hKey) {
         Ok(()) => {}
         Err(()) => {
@@ -615,7 +633,7 @@ extern "C" fn C_Sign(
         error!("C_Sign: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let manager = MANAGER.lock().unwrap();
+    let manager = try_to_get_manager!();
     let data = unsafe { std::slice::from_raw_parts(pData, ulDataLen as usize) };
     match manager.sign(hSession, data) {
         Ok(signature) => {

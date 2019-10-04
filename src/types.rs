@@ -812,6 +812,7 @@ pub fn serialize_uint<T: Into<u64>>(value: T) -> Vec<u8> {
 pub const CKR_OK: CK_RV = 0x0;
 pub const CKR_GENERAL_ERROR: CK_RV = 0x5;
 pub const CKR_ARGUMENTS_BAD: CK_RV = 0x7;
+pub const CKR_DEVICE_ERROR: CK_RV = 0x30;
 pub const CKR_FUNCTION_NOT_SUPPORTED: CK_RV = 0x54;
 pub const CKR_SESSION_HANDLE_INVALID: CK_RV = 0xB3;
 pub const CKR_BUFFER_TOO_SMALL: CK_RV = 0x150;

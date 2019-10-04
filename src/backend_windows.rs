@@ -216,8 +216,14 @@ impl NCryptKeyHandle {
                 return Err(());
             }
         }
-        assert!(key_spec == CERT_NCRYPT_KEY_SPEC);
-        assert!(must_free != 0);
+        if key_spec != CERT_NCRYPT_KEY_SPEC {
+            error!("CryptAcquireCertificatePrivateKey returned non-ncrypt handle");
+            return Err(());
+        }
+        if must_free == 0 {
+            error!("CryptAcquireCertificatePrivateKey returned shared key handle");
+            return Err(());
+        }
         Ok(NCryptKeyHandle(key_handle as NCRYPT_KEY_HANDLE))
     }
 }
@@ -357,11 +363,19 @@ impl Key {
                 CKA_ID => self.id(),
                 CKA_PRIVATE => self.private(),
                 CKA_KEY_TYPE => self.key_type(),
-                CKA_MODULUS if self.modulus().is_some() => {
-                    self.modulus().expect("modulus not Some?")
+                CKA_MODULUS => {
+                    if let Some(modulus) = self.modulus() {
+                        modulus
+                    } else {
+                        return false;
+                    }
                 }
-                CKA_EC_PARAMS if self.ec_params().is_some() => {
-                    self.ec_params().expect("ec_params not Some?")
+                CKA_EC_PARAMS => {
+                    if let Some(ec_params) = self.ec_params() {
+                        ec_params
+                    } else {
+                        return false;
+                    }
                 }
                 _ => return false,
             };
@@ -373,19 +387,16 @@ impl Key {
     }
 
     fn get_attribute(&self, attribute: CK_ATTRIBUTE_TYPE) -> Option<&[u8]> {
-        let result = match attribute {
-            CKA_CLASS => self.class(),
-            CKA_TOKEN => self.token(),
-            CKA_ID => self.id(),
-            CKA_PRIVATE => self.private(),
-            CKA_KEY_TYPE => self.key_type(),
-            CKA_MODULUS if self.modulus.is_some() => self.modulus().expect("modulus not Some?"),
-            CKA_EC_PARAMS if self.ec_params.is_some() => {
-                self.ec_params().expect("ec_params not Some?")
-            }
+        match attribute {
+            CKA_CLASS => Some(self.class()),
+            CKA_TOKEN => Some(self.token()),
+            CKA_ID => Some(self.id()),
+            CKA_PRIVATE => Some(self.private()),
+            CKA_KEY_TYPE => Some(self.key_type()),
+            CKA_MODULUS => self.modulus(),
+            CKA_EC_PARAMS => self.ec_params(),
             _ => return None,
-        };
-        Some(result)
+        }
     }
 
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, ()> {
@@ -442,7 +453,13 @@ impl Key {
             error!("NCryptSignHash failed (second time) {}", status);
             return Err(());
         }
-        assert!(final_signature_len == signature_len);
+        if final_signature_len != signature_len {
+            error!(
+                "NCryptSignHash: inconsistent signature lengths? {} != {}",
+                final_signature_len, signature_len
+            );
+            return Err(());
+        }
         Ok(signature)
     }
 }
@@ -505,7 +522,13 @@ pub fn list_objects() -> Vec<Object> {
     let location_flags = CERT_SYSTEM_STORE_CURRENT_USER // TODO: loop over multiple locations
         | CERT_STORE_OPEN_EXISTING_FLAG
         | CERT_STORE_READONLY_FLAG;
-    let store_name = CString::new("My").expect("CString::new failed");
+    let store_name = match CString::new("My") {
+        Ok(store_name) => store_name,
+        Err(null_error) => {
+            error!("CString::new given input with a null byte: {}", null_error);
+            return objects;
+        }
+    };
     let store = CertStore::new(unsafe {
         CertOpenStore(
             CERT_STORE_PROV_SYSTEM_REGISTRY_A,
