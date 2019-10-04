@@ -62,10 +62,15 @@ extern "C" fn C_Finalize(_pReserved: CK_VOID_PTR) -> CK_RV {
 /// This gets called to gather some information about the module. In particular, this implementation
 /// supports (portions of) cryptoki (PKCS #11) version 2.2.
 extern "C" fn C_GetInfo(pInfo: CK_INFO_PTR) -> CK_RV {
+    if pInfo.is_null() {
+        error!("C_GetInfo: CKR_ARGUMENTS_BAD");
+        return CKR_ARGUMENTS_BAD;
+    }
     debug!("C_GetInfo: CKR_OK");
     let mut info = CK_INFO::default();
     info.cryptokiVersion.major = 2;
     info.cryptokiVersion.minor = 2;
+    // The specification mandates that these strings be padded with spaces.
     info.manufacturerID = *b"Mozilla Corporation             ";
     info.libraryDescription = *b"OS Client Cert Module           ";
     unsafe {

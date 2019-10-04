@@ -418,6 +418,8 @@ impl Key {
         };
         let mut data = data.to_vec();
         let mut signature_len = 0;
+        // We call NCryptSignHash twice: the first time to get the size of the buffer we need to
+        // allocate and then again to actually sign the data.
         let status = unsafe {
             NCryptSignHash(
                 *key,
@@ -432,7 +434,10 @@ impl Key {
         };
         // 0 is "ERROR_SUCCESS" (but "ERROR_SUCCESS" is unsigned, whereas SECURITY_STATUS is signed)
         if status != 0 {
-            error!("NCryptSignHash failed (first time), {}", status);
+            error!(
+                "NCryptSignHash failed trying to get signature buffer length, {}",
+                status
+            );
             return Err(());
         }
         let mut signature = vec![0; signature_len as usize];
@@ -450,7 +455,7 @@ impl Key {
             )
         };
         if status != 0 {
-            error!("NCryptSignHash failed (second time) {}", status);
+            error!("NCryptSignHash failed signing data {}", status);
             return Err(());
         }
         if final_signature_len != signature_len {
