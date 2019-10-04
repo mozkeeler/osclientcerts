@@ -213,6 +213,21 @@ mod tests {
     }
 
     #[test]
+    fn der_test_sequence() {
+        let input = vec![
+            SEQUENCE, 20, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 0, 0,
+        ];
+        let mut der = Der::new(&input);
+        let result = der.read(SEQUENCE);
+        assert!(result.is_ok());
+        assert_eq!(
+            result.unwrap(),
+            [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 0, 0]
+        );
+        assert!(der.at_end());
+    }
+
+    #[test]
     fn der_test_not_shortest_two_byte_length_encoding() {
         let input = vec![SEQUENCE, 0x81, 1, 1];
         let mut der = Der::new(&input);
@@ -222,6 +237,23 @@ mod tests {
     #[test]
     fn der_test_not_shortest_three_byte_length_encoding() {
         let input = vec![SEQUENCE, 0x82, 0, 1, 1];
+        let mut der = Der::new(&input);
+        assert!(der.read(SEQUENCE).is_err());
+    }
+
+    #[test]
+    fn der_test_indefinite_length_unsupported() {
+        let input = vec![SEQUENCE, 0x80, 1, 2, 3, 0x00, 0x00];
+        let mut der = Der::new(&input);
+        assert!(der.read(SEQUENCE).is_err());
+    }
+
+    #[test]
+    fn der_test_input_too_long() {
+        // This isn't valid DER (the contents of the SEQUENCE are truncated), but it demonstrates
+        // that we don't try to read too much if we're given a long length (and also that we don't
+        // support lengths 2^16 and up).
+        let input = vec![SEQUENCE, 0x83, 0x01, 0x00, 0x01, 1, 1, 1, 1];
         let mut der = Der::new(&input);
         assert!(der.read(SEQUENCE).is_err());
     }
@@ -238,5 +270,14 @@ mod tests {
         let empty = vec![SEQUENCE | CONSTRUCTED];
         assert!(read_rsa_modulus(&empty).is_err());
         assert!(read_ec_sig_point(&empty).is_err());
+    }
+
+    #[test]
+    fn test_read_rsa_modulus() {
+        let rsa_key = include_bytes!("../test/rsa.bin");
+        let result = read_rsa_modulus(rsa_key);
+        assert!(result.is_ok());
+        let modulus = result.unwrap();
+        assert_eq!(modulus, include_bytes!("../test/modulus.bin").to_vec());
     }
 }
