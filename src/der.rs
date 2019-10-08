@@ -18,22 +18,6 @@ pub fn read_rsa_modulus(public_key: &[u8]) -> Result<Vec<u8>, ()> {
     Ok(modulus_value.to_vec())
 }
 
-/// Given a slice of DER bytes representing an ECDSA signature, extracts the bytes of `r` and `s`
-/// as unsigned integers. Also verifies that this consumes the entirety of the slice.
-///   Ecdsa-Sig-Value  ::=  SEQUENCE  {
-///        r     INTEGER,
-///        s     INTEGER  }
-#[cfg(target_os = "macos")]
-pub fn read_ec_sig_point<'a>(signature: &'a [u8]) -> Result<(&'a [u8], &'a [u8]), ()> {
-    let mut sequence = Sequence::new(signature)?;
-    let r = sequence.read_unsigned_integer()?;
-    let s = sequence.read_unsigned_integer()?;
-    if !sequence.at_end() {
-        return Err(());
-    }
-    Ok((r, s))
-}
-
 /// Helper macro for reading some bytes from a slice while checking the slice is long enough.
 /// Returns a pair consisting of a slice of the bytes read and a slice of the rest of the bytes
 /// from the original slice.

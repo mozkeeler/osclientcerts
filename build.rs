@@ -5,16 +5,6 @@ use std::env;
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
 
-#[cfg(not(target_os = "windows"))]
-fn main() {
-    if env::var("TARGET")
-        .expect("TARGET unset?")
-        .contains("-apple")
-    {
-        println!("cargo:rustc-link-lib=framework=Security");
-    }
-}
-
 #[cfg(target_os = "windows")]
 fn main() {
     let bindings = bindgen::Builder::default()

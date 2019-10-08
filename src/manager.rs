@@ -1,7 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-#[cfg(target_os = "macos")]
-use crate::backend_macos as backend;
 #[cfg(target_os = "windows")]
 use crate::backend_windows as backend;
 use crate::types::*;
