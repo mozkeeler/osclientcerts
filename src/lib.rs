@@ -49,7 +49,7 @@ macro_rules! try_to_get_manager {
 /// instantiating the `Manager`.
 extern "C" fn C_Initialize(_pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
     // Getting the manager initializes our logging, so do it first.
-    let manager = try_to_get_manager!();
+    let _manager = try_to_get_manager!();
     debug!("C_Initialize: CKR_OK");
     CKR_OK
 }
@@ -604,7 +604,7 @@ extern "C" fn C_SignInit(
     }
     // pMechanism generally appears to be empty (just mechanism is set).
     // TODO: presumably we should validate it against hKey?
-    debug!("{}", unsafe { *pMechanism });
+    debug!("{:?}", unsafe { *pMechanism });
     let mut manager = try_to_get_manager!();
     match manager.start_sign(hSession, hKey) {
         Ok(()) => {}
