@@ -974,6 +974,9 @@ static mut FUNCTION_LIST: CK_FUNCTION_LIST = CK_FUNCTION_LIST {
 /// comprising this module.
 #[no_mangle]
 pub extern "C" fn C_GetFunctionList(ppFunctionList: CK_FUNCTION_LIST_PTR_PTR) -> CK_RV {
+    if ppFunctionList.is_null() {
+        return CKR_ARGUMENTS_BAD;
+    }
     unsafe {
         *ppFunctionList = &mut FUNCTION_LIST;
     }
