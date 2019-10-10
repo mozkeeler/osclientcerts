@@ -1,0 +1,15 @@
+--- a/Cargo.toml	2019-10-10 14:05:31.971870385 -0700
++++ b/Cargo.toml	2019-10-10 14:11:22.816838151 -0700
+@@ -1,5 +1,5 @@
+ [package]
+-name = "osclientcerts"
++name = "osclientcerts-static"
+ version = "0.1.4"
+ authors = ["Dana Keeler <dkeeler@mozilla.com>"]
+ edition = "2018"
+@@ -23,4 +23,4 @@
+ bindgen = {version = "0.51.1-oldsyn", default-features = false} # disable `logging` to reduce code size
+ 
+ [lib]
+-crate-type = ["cdylib"]
++crate-type = ["staticlib"]
