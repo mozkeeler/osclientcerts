@@ -59,6 +59,9 @@ extern "C" fn C_Finalize(_pReserved: CK_VOID_PTR) -> CK_RV {
     CKR_OK
 }
 
+const MANUFACTURER_ID_BYTES: &[u8; 32] = b"Mozilla Corporation             ";
+const LIBRARY_DESCRIPTION_BYTES: &[u8; 32] = b"OS Client Cert Module           ";
+
 /// This gets called to gather some information about the module. In particular, this implementation
 /// supports (portions of) cryptoki (PKCS #11) version 2.2.
 extern "C" fn C_GetInfo(pInfo: CK_INFO_PTR) -> CK_RV {
@@ -71,8 +74,8 @@ extern "C" fn C_GetInfo(pInfo: CK_INFO_PTR) -> CK_RV {
     info.cryptokiVersion.major = 2;
     info.cryptokiVersion.minor = 2;
     // The specification mandates that these strings be padded with spaces.
-    info.manufacturerID = *b"Mozilla Corporation             ";
-    info.libraryDescription = *b"OS Client Cert Module           ";
+    info.manufacturerID = *MANUFACTURER_ID_BYTES;
+    info.libraryDescription = *LIBRARY_DESCRIPTION_BYTES;
     unsafe {
         *pInfo = info;
     }
@@ -110,6 +113,9 @@ extern "C" fn C_GetSlotList(
     CKR_OK
 }
 
+const SLOT_DESCRIPTION_BYTES: &[u8; 64] =
+    b"OS Client Cert Slot                                             ";
+
 /// This gets called to obtain information about slots. In this implementation, the token is always
 /// present in the slot.
 extern "C" fn C_GetSlotInfo(slotID: CK_SLOT_ID, pInfo: CK_SLOT_INFO_PTR) -> CK_RV {
@@ -118,8 +124,8 @@ extern "C" fn C_GetSlotInfo(slotID: CK_SLOT_ID, pInfo: CK_SLOT_INFO_PTR) -> CK_R
         return CKR_ARGUMENTS_BAD;
     }
     let slot_info = CK_SLOT_INFO {
-        slotDescription: *b"OS Client Cert Slot                                             ",
-        manufacturerID: *b"Mozilla Corporation             ",
+        slotDescription: *SLOT_DESCRIPTION_BYTES,
+        manufacturerID: *MANUFACTURER_ID_BYTES,
         flags: CKF_TOKEN_PRESENT,
         hardwareVersion: CK_VERSION::default(),
         firmwareVersion: CK_VERSION::default(),
@@ -131,6 +137,10 @@ extern "C" fn C_GetSlotInfo(slotID: CK_SLOT_ID, pInfo: CK_SLOT_INFO_PTR) -> CK_R
     CKR_OK
 }
 
+const TOKEN_LABEL_BYTES: &[u8; 32] = b"OS Client Cert Token            ";
+const TOKEN_MODEL_BYTES: &[u8; 16] = b"osclientcerts   ";
+const TOKEN_SERIAL_NUMBER_BYTES: &[u8; 16] = b"0000000000000000";
+
 /// This gets called to obtain some information about tokens. This implementation only has one slot,
 /// so it only has one token. This information is primarily for display purposes.
 extern "C" fn C_GetTokenInfo(slotID: CK_SLOT_ID, pInfo: CK_TOKEN_INFO_PTR) -> CK_RV {
@@ -139,10 +149,10 @@ extern "C" fn C_GetTokenInfo(slotID: CK_SLOT_ID, pInfo: CK_TOKEN_INFO_PTR) -> CK
         return CKR_ARGUMENTS_BAD;
     }
     let mut token_info = CK_TOKEN_INFO::default();
-    token_info.label = *b"OS Client Cert Token            ";
-    token_info.manufacturerID = *b"Mozilla Corporation             ";
-    token_info.model = *b"osclientcerts   ";
-    token_info.serialNumber = *b"0000000000000000";
+    token_info.label = *TOKEN_LABEL_BYTES;
+    token_info.manufacturerID = *MANUFACTURER_ID_BYTES;
+    token_info.model = *TOKEN_MODEL_BYTES;
+    token_info.serialNumber = *TOKEN_SERIAL_NUMBER_BYTES;
     unsafe {
         *pInfo = token_info;
     }
