@@ -21,8 +21,6 @@ if CONFIG['OS_ARCH'] == 'WINNT':
 
 SharedLibrary('osclientcerts')
 
-# C_GetFunctionList needs to be exported. As it turns out, it's much easier to
-# just export all the symbols.
 NoVisibilityFlags()
 SYMBOLS_FILE = 'osclientcerts.symbols'
 
