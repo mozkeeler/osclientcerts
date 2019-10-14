@@ -400,7 +400,21 @@ impl Key {
         }
     }
 
+    pub fn get_signature_length(&self, data: &[u8]) -> Result<usize, ()> {
+        match self.sign_internal(data, false) {
+            Ok(dummy_signature_bytes) => Ok(dummy_signature_bytes.len()),
+            Err(()) => Err(()),
+        }
+    }
+
     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, ()> {
+        self.sign_internal(data, true)
+    }
+
+    /// data: the data to sign
+    /// do_signature: if true, actually perform the signature. Otherwise, return a `Vec<u8>` of the
+    /// length the signature would be, if performed.
+    fn sign_internal(&self, data: &[u8], do_signature: bool) -> Result<Vec<u8>, ()> {
         // Acquiring a handle on the key can cause the OS to show some UI to the user, so we do this
         // as late as possible (i.e. here).
         let key = NCryptKeyHandle::from_cert(&self.cert)?;
@@ -442,6 +456,9 @@ impl Key {
             return Err(());
         }
         let mut signature = vec![0; signature_len as usize];
+        if !do_signature {
+            return Ok(signature);
+        }
         let mut final_signature_len = signature_len;
         let status = unsafe {
             NCryptSignHash(

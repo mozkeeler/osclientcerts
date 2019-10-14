@@ -173,8 +173,6 @@ impl Manager {
         session: CK_SESSION_HANDLE,
         key_handle: CK_OBJECT_HANDLE,
     ) -> Result<(), ()> {
-        // TODO: per the spec, can we have multiple signs for the same session
-        // but different keys?
         if self.signs.contains_key(&session) {
             return Err(());
         }
@@ -186,8 +184,26 @@ impl Manager {
         Ok(())
     }
 
-    pub fn sign(&self, session: CK_SESSION_HANDLE, data: &[u8]) -> Result<Vec<u8>, ()> {
+    pub fn get_signature_length(
+        &self,
+        session: CK_SESSION_HANDLE,
+        data: &[u8],
+    ) -> Result<usize, ()> {
         let key_handle = match self.signs.get(&session) {
+            Some(key_handle) => key_handle,
+            None => return Err(()),
+        };
+        let key = match self.objects.get(&key_handle) {
+            Some(Object::Key(key)) => key,
+            _ => return Err(()),
+        };
+        key.get_signature_length(data)
+    }
+
+    pub fn sign(&mut self, session: CK_SESSION_HANDLE, data: &[u8]) -> Result<Vec<u8>, ()> {
+        // Performing the signature (via C_Sign, which is the only way we support) finishes the sign
+        // operation, so it needs to be removed here.
+        let key_handle = match self.signs.remove(&session) {
             Some(key_handle) => key_handle,
             None => return Err(()),
         };

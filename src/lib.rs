@@ -626,31 +626,43 @@ extern "C" fn C_Sign(
     pSignature: CK_BYTE_PTR,
     pulSignatureLen: CK_ULONG_PTR,
 ) -> CK_RV {
-    // TODO: we seem to always pass in allocated memory - do we need to handle
-    // the case where we're called to see what the length will be first?
-    if pData.is_null() || pSignature.is_null() || pulSignatureLen.is_null() {
+    if pData.is_null() || pulSignatureLen.is_null() {
         error!("C_Sign: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let manager = try_to_get_manager!();
     let data = unsafe { std::slice::from_raw_parts(pData, ulDataLen as usize) };
-    match manager.sign(hSession, data) {
-        Ok(signature) => {
-            let signature_capacity = unsafe { *pulSignatureLen } as usize;
-            if signature_capacity < signature.len() {
-                error!("C_Sign: CKR_ARGUMENTS_BAD");
-                return CKR_ARGUMENTS_BAD;
-            }
-            let ptr: *mut u8 = pSignature as *mut u8;
-            unsafe {
-                std::ptr::copy_nonoverlapping(signature.as_ptr(), ptr, signature.len());
+    if pSignature.is_null() {
+        let manager = try_to_get_manager!();
+        match manager.get_signature_length(hSession, data) {
+            Ok(signature_length) => unsafe {
+                *pulSignatureLen = signature_length as CK_ULONG;
+            },
+            Err(()) => {
+                error!("C_Sign: get_signature_length failed");
+                return CKR_GENERAL_ERROR;
             }
         }
-        Err(()) => {
-            error!("C_Sign: CKR_GENERAL_ERROR");
-            return CKR_GENERAL_ERROR;
+    } else {
+        let mut manager = try_to_get_manager!();
+        match manager.sign(hSession, data) {
+            Ok(signature) => {
+                let signature_capacity = unsafe { *pulSignatureLen } as usize;
+                if signature_capacity < signature.len() {
+                    error!("C_Sign: CKR_ARGUMENTS_BAD");
+                    return CKR_ARGUMENTS_BAD;
+                }
+                let ptr: *mut u8 = pSignature as *mut u8;
+                unsafe {
+                    std::ptr::copy_nonoverlapping(signature.as_ptr(), ptr, signature.len());
+                    *pulSignatureLen = signature.len() as CK_ULONG;
+                }
+            }
+            Err(()) => {
+                error!("C_Sign: sign failed");
+                return CKR_GENERAL_ERROR;
+            }
         }
-    };
+    }
     debug!("C_Sign: CKR_OK");
     CKR_OK
 }
