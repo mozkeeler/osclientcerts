@@ -93,11 +93,10 @@ extern "C" fn C_GetSlotList(
         error!("C_GetSlotList: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    if pSlotList.is_null() {
-        unsafe {
-            *pulCount = 1;
-        }
-    } else {
+    unsafe {
+        *pulCount = 1;
+    }
+    if !pSlotList.is_null() {
         let slotCount = unsafe { *pulCount };
         if slotCount < 1 {
             error!("C_GetSlotList: CKR_BUFFER_TOO_SMALL");
