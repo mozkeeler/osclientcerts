@@ -64,6 +64,9 @@ extern "C" fn C_Finalize(_pReserved: CK_VOID_PTR) -> CK_RV {
     CKR_OK
 }
 
+// The specification mandates that these strings be padded with spaces to the appropriate length.
+// Since the length of fixed-size arrays in rust is part of the type, the compiler enforces that
+// these byte strings are of the correct length.
 const MANUFACTURER_ID_BYTES: &[u8; 32] = b"Mozilla Corporation             ";
 const LIBRARY_DESCRIPTION_BYTES: &[u8; 32] = b"OS Client Cert Module           ";
 
@@ -78,7 +81,6 @@ extern "C" fn C_GetInfo(pInfo: CK_INFO_PTR) -> CK_RV {
     let mut info = CK_INFO::default();
     info.cryptokiVersion.major = 2;
     info.cryptokiVersion.minor = 2;
-    // The specification mandates that these strings be padded with spaces.
     info.manufacturerID = *MANUFACTURER_ID_BYTES;
     info.libraryDescription = *LIBRARY_DESCRIPTION_BYTES;
     unsafe {
@@ -362,7 +364,6 @@ extern "C" fn C_GetAttributeValue(
         error!("C_GetAttributeValue: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    // TODO: check hSession (do we actually need to?)
     let mut manager = try_to_get_manager!();
     let object = match manager.get_object(hObject) {
         Ok(object) => object,
@@ -482,7 +483,8 @@ extern "C" fn C_FindObjects(
 /// tells the `Manager` to clear the search.
 extern "C" fn C_FindObjectsFinal(hSession: CK_SESSION_HANDLE) -> CK_RV {
     let mut manager = try_to_get_manager!();
-    manager.clear_search(hSession); // TODO: return error if there was no search?
+    // It would be an error if there were no search for this session, but we can be permissive here.
+    manager.clear_search(hSession);
     debug!("C_FindObjectsFinal: CKR_OK");
     CKR_OK
 }
@@ -617,8 +619,9 @@ extern "C" fn C_SignInit(
         return CKR_ARGUMENTS_BAD;
     }
     // pMechanism generally appears to be empty (just mechanism is set).
-    // TODO: presumably we should validate it against hKey?
-    debug!("{:?}", unsafe { *pMechanism });
+    // Presumably we should validate the mechanism against hKey, but the specification doesn't
+    // actually seem to require this.
+    debug!("C_SignInit: mechanism is {:?}", unsafe { *pMechanism });
     let mut manager = try_to_get_manager!();
     match manager.start_sign(hSession, hKey) {
         Ok(()) => {}

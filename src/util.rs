@@ -107,8 +107,10 @@ impl<'a> Der<'a> {
         Der { contents }
     }
 
-    // TODO: in theory, a caller could encounter an error and try again, in
-    // which case we may be in an inconsistent state.
+    // In theory, a caller could encounter an error and try another operation, in which case we may
+    // be in an inconsistent state. As long as this implementation isn't exposed to code that would
+    // use it incorrectly (i.e. it stays in this module and we only expose a stateless API), it
+    // should be safe.
     fn read(&mut self, tag: u8) -> Result<&'a [u8], ()> {
         let contents = self.contents;
         let (tag_read, rest) = try_read_bytes!(contents, 1);
