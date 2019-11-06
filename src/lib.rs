@@ -6,6 +6,9 @@
 #![allow(non_snake_case)]
 
 extern crate byteorder;
+#[cfg(target_os = "macos")]
+#[macro_use]
+extern crate core_foundation;
 extern crate env_logger;
 #[macro_use]
 extern crate lazy_static;
@@ -19,6 +22,8 @@ extern crate winapi;
 use pkcs11::types::*;
 use std::sync::Mutex;
 
+#[cfg(target_os = "macos")]
+mod backend_macos;
 #[cfg(target_os = "windows")]
 mod backend_windows;
 mod manager;
