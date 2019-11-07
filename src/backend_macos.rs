@@ -186,10 +186,74 @@ const OID_BYTES_SECP256R1: &[u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0
 const OID_BYTES_SECP384R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x22];
 const OID_BYTES_SECP521R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23];
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum KeyType {
     EC,
     RSA,
+}
+
+enum SignParams {
+    EC(SecKeyAlgorithm),
+    RSA(SecKeyAlgorithm),
+}
+
+impl SignParams {
+    fn new(
+        key_type: KeyType,
+        data_len: usize,
+        params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
+    ) -> Result<SignParams, ()> {
+        match key_type {
+            KeyType::EC => return SignParams::new_ec_params(data_len),
+            KeyType::RSA => {}
+        }
+        let pss_params = match params {
+            Some(pss_params) => pss_params,
+            None => {
+                return Ok(SignParams::RSA(unsafe {
+                    kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw
+                }))
+            }
+        };
+        let algorithm = match pss_params.hashAlg {
+            CKM_SHA_1 => unsafe { kSecKeyAlgorithmRSASignatureDigestPSSSHA1 },
+            CKM_SHA256 => unsafe { kSecKeyAlgorithmRSASignatureDigestPSSSHA256 },
+            CKM_SHA384 => unsafe { kSecKeyAlgorithmRSASignatureDigestPSSSHA384 },
+            CKM_SHA512 => unsafe { kSecKeyAlgorithmRSASignatureDigestPSSSHA512 },
+            _ => {
+                error!(
+                    "unsupported algorithm to use with RSA-PSS: {}",
+                    unsafe_packed_field_access!(pss_params.hashAlg)
+                );
+                return Err(());
+            }
+        };
+        Ok(SignParams::EC(algorithm))
+    }
+
+    fn new_ec_params(data_len: usize) -> Result<SignParams, ()> {
+        let algorithm = match data_len {
+            20 => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA1 },
+            32 => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA256 },
+            48 => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA384 },
+            64 => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA512 },
+            _ => {
+                error!(
+                    "Unexpected digested signature input length for ECDSA: {}",
+                    data_len
+                );
+                return Err(());
+            }
+        };
+        Ok(SignParams::EC(algorithm))
+    }
+
+    fn get_algorithm(&self) -> &SecKeyAlgorithm {
+        match self {
+            SignParams::EC(algorithm) => &algorithm,
+            SignParams::RSA(algorithm) => &algorithm,
+        }
+    }
 }
 
 pub struct Key {
@@ -358,15 +422,23 @@ impl Key {
         }
     }
 
-    pub fn get_signature_length(&self, data: &[u8]) -> Result<usize, ()> {
+    pub fn get_signature_length(
+        &self,
+        data: &[u8],
+        params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
+    ) -> Result<usize, ()> {
         // Unfortunately we don't have a way of getting the length of a signature without creating
         // one.
-        let signature = self.sign(data)?;
+        let signature = self.sign(data, params)?;
         Ok(signature.len())
     }
 
     // The input data is a hash. What algorithm we use depends on the size of the hash.
-    pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, ()> {
+    pub fn sign(
+        &self,
+        data: &[u8],
+        params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
+    ) -> Result<Vec<u8>, ()> {
         let key = unsafe {
             let mut key = std::ptr::null();
             let status = SecIdentityCopyPrivateKey(self.identity.0.as_concrete_TypeRef(), &mut key);
@@ -380,26 +452,14 @@ impl Key {
             }
             SecKey::wrap_under_create_rule(key)
         };
-        let signing_algorithm = match (&self.key_type_enum, data.len()) {
-            (&KeyType::RSA, _) => unsafe { kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw },
-            (&KeyType::EC, 20) => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA1 },
-            (&KeyType::EC, 32) => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA256 },
-            (&KeyType::EC, 48) => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA384 },
-            (&KeyType::EC, 64) => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA512 },
-            (&KeyType::EC, _) => {
-                error!(
-                    "Unexpected digested signature input length for ECDSA: {}",
-                    data.len()
-                );
-                return Err(());
-            }
-        };
+        let sign_params = SignParams::new(self.key_type_enum, data.len(), params)?;
+        let signing_algorithm = sign_params.get_algorithm();
         let data = CFData::from_buffer(data);
         let signature = unsafe {
             let mut error = std::ptr::null_mut();
             let result = SecKeyCreateSignature(
                 key.as_concrete_TypeRef(),
-                signing_algorithm,
+                *signing_algorithm,
                 data.as_concrete_TypeRef(),
                 &mut error,
             );
