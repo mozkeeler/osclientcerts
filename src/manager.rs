@@ -165,11 +165,24 @@ impl Manager {
         self.searches.remove(&session);
     }
 
-    pub fn get_object(&mut self, object_handle: CK_OBJECT_HANDLE) -> Result<&Object, ()> {
-        match self.objects.get(&object_handle) {
-            Some(object) => Ok(object),
-            None => Err(()),
+    pub fn get_attributes(
+        &self,
+        object_handle: CK_OBJECT_HANDLE,
+        attr_types: Vec<CK_ATTRIBUTE_TYPE>,
+    ) -> Result<Vec<Option<Vec<u8>>>, ()> {
+        let object = match self.objects.get(&object_handle) {
+            Some(object) => object,
+            None => return Err(()),
+        };
+        let mut results = Vec::with_capacity(attr_types.len());
+        for attr_type in attr_types {
+            let result = match object.get_attribute(attr_type) {
+                Some(value) => Some(value.to_owned()),
+                None => None,
+            };
+            results.push(result);
         }
+        Ok(results)
     }
 
     /// The way NSS uses PKCS #11 to sign data happens in two phases: setup and sign. This

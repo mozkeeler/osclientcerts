@@ -380,17 +380,29 @@ extern "C" fn C_GetAttributeValue(
         error!("C_GetAttributeValue: CKR_ARGUMENTS_BAD");
         return CKR_ARGUMENTS_BAD;
     }
-    let mut manager = try_to_get_manager!();
-    let object = match manager.get_object(hObject) {
-        Ok(object) => object,
+    let mut attr_types = Vec::with_capacity(ulCount as usize);
+    for i in 0..ulCount {
+        let attr = unsafe { &*pTemplate.offset(i as isize) };
+        attr_types.push(attr.attrType);
+    }
+    let manager = try_to_get_manager!();
+    let values = match manager.get_attributes(hObject, attr_types) {
+        Ok(values) => values,
         Err(()) => {
             error!("C_GetAttributeValue: CKR_ARGUMENTS_BAD");
             return CKR_ARGUMENTS_BAD;
         }
     };
+    if values.len() != ulCount as usize {
+        error!(
+            "C_GetAttributeValue: manager.get_attributes didn't return the right number of values"
+        );
+        return CKR_DEVICE_ERROR;
+    }
     for i in 0..ulCount {
         let mut attr = unsafe { &mut *pTemplate.offset(i as isize) };
-        if let Some(attr_value) = object.get_attribute(attr.attrType) {
+        // NB: the safety of this array access depends on the length check above
+        if let Some(attr_value) = &values[i] {
             if attr.pValue.is_null() {
                 attr.ulValueLen = attr_value.len() as CK_ULONG;
             } else {
