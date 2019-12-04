@@ -15,10 +15,10 @@ use backend::*;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 
-type ManagerArgumentsSender = Sender<ManagerFunctionArguments>;
+type ManagerArgumentsSender = Sender<ManagerArguments>;
 type ManagerReturnValueReceiver = Receiver<ManagerReturnValue>;
 
-enum ManagerFunctionArguments {
+enum ManagerArguments {
     OpenSession,
     CloseSession(CK_SESSION_HANDLE),
     CloseAllSessions,
@@ -36,16 +36,29 @@ enum ManagerFunctionArguments {
 }
 
 enum ManagerReturnValue {
-    OpenSession(CK_SESSION_HANDLE),
+    OpenSession(Result<CK_SESSION_HANDLE, ()>),
     CloseSession(Result<(), ()>),
-    CloseAllSessions,
+    CloseAllSessions(Result<(), ()>),
     StartSearch(Result<(), ()>),
     Search(Result<Vec<CK_OBJECT_HANDLE>, ()>),
-    ClearSearch,
+    ClearSearch(Result<(), ()>),
     GetAttributes(Result<Vec<Option<Vec<u8>>>, ()>),
     StartSign(Result<(), ()>),
     GetSignatureLength(Result<usize, ()>),
     Sign(Result<Vec<u8>, ()>),
+}
+
+macro_rules! manager_proxy_fn_impl {
+    ($manager:ident, $argument_enum:expr, $return_type:path) => {
+        match $manager.proxy_call($argument_enum) {
+            Ok($return_type(result)) => result,
+            Ok(_) => {
+                error!("unexpected return value from manager");
+                Err(())
+            }
+            Err(()) => Err(()),
+        }
+    };
 }
 
 pub struct ManagerProxy {
@@ -68,42 +81,40 @@ impl ManagerProxy {
                     }
                 };
                 let results = match arguments {
-                    ManagerFunctionArguments::OpenSession => {
+                    ManagerArguments::OpenSession => {
                         ManagerReturnValue::OpenSession(real_manager.open_session())
                     }
-                    ManagerFunctionArguments::CloseSession(session_handle) => {
+                    ManagerArguments::CloseSession(session_handle) => {
                         ManagerReturnValue::CloseSession(real_manager.close_session(session_handle))
                     }
-                    ManagerFunctionArguments::CloseAllSessions => {
-                        real_manager.close_all_sessions();
-                        ManagerReturnValue::CloseAllSessions
+                    ManagerArguments::CloseAllSessions => {
+                        ManagerReturnValue::CloseAllSessions(real_manager.close_all_sessions())
                     }
-                    ManagerFunctionArguments::StartSearch(session, attrs) => {
+                    ManagerArguments::StartSearch(session, attrs) => {
                         ManagerReturnValue::StartSearch(real_manager.start_search(session, &attrs))
                     }
-                    ManagerFunctionArguments::Search(session, max_objects) => {
+                    ManagerArguments::Search(session, max_objects) => {
                         ManagerReturnValue::Search(real_manager.search(session, max_objects))
                     }
-                    ManagerFunctionArguments::ClearSearch(session) => {
-                        real_manager.clear_search(session);
-                        ManagerReturnValue::ClearSearch
+                    ManagerArguments::ClearSearch(session) => {
+                        ManagerReturnValue::ClearSearch(real_manager.clear_search(session))
                     }
-                    ManagerFunctionArguments::GetAttributes(object_handle, attr_types) => {
+                    ManagerArguments::GetAttributes(object_handle, attr_types) => {
                         ManagerReturnValue::GetAttributes(
                             real_manager.get_attributes(object_handle, attr_types),
                         )
                     }
-                    ManagerFunctionArguments::StartSign(session, key_handle, params) => {
+                    ManagerArguments::StartSign(session, key_handle, params) => {
                         ManagerReturnValue::StartSign(
                             real_manager.start_sign(session, key_handle, params),
                         )
                     }
-                    ManagerFunctionArguments::GetSignatureLength(session, data) => {
+                    ManagerArguments::GetSignatureLength(session, data) => {
                         ManagerReturnValue::GetSignatureLength(
                             real_manager.get_signature_length(session, &data),
                         )
                     }
-                    ManagerFunctionArguments::Sign(session, data) => {
+                    ManagerArguments::Sign(session, data) => {
                         ManagerReturnValue::Sign(real_manager.sign(session, &data))
                     }
                 };
@@ -122,7 +133,7 @@ impl ManagerProxy {
         }
     }
 
-    fn proxy_call(&self, args: ManagerFunctionArguments) -> Result<ManagerReturnValue, ()> {
+    fn proxy_call(&self, args: ManagerArguments) -> Result<ManagerReturnValue, ()> {
         match self.sender.send(args) {
             Ok(()) => {}
             Err(e) => {
@@ -141,36 +152,27 @@ impl ManagerProxy {
     }
 
     pub fn open_session(&mut self) -> Result<CK_SESSION_HANDLE, ()> {
-        match self.proxy_call(ManagerFunctionArguments::OpenSession) {
-            Ok(ManagerReturnValue::OpenSession(session_handle)) => Ok(session_handle),
-            Ok(_) => {
-                error!("unexpected return value from manager");
-                Err(())
-            }
-            Err(()) => Err(()),
-        }
+        manager_proxy_fn_impl!(
+            self,
+            ManagerArguments::OpenSession,
+            ManagerReturnValue::OpenSession
+        )
     }
 
     pub fn close_session(&mut self, session: CK_SESSION_HANDLE) -> Result<(), ()> {
-        match self.proxy_call(ManagerFunctionArguments::CloseSession(session)) {
-            Ok(ManagerReturnValue::CloseSession(result)) => result,
-            Ok(_) => {
-                error!("unexpected return value from manager");
-                Err(())
-            }
-            Err(()) => Err(()),
-        }
+        manager_proxy_fn_impl!(
+            self,
+            ManagerArguments::CloseSession(session),
+            ManagerReturnValue::CloseSession
+        )
     }
 
     pub fn close_all_sessions(&mut self) -> Result<(), ()> {
-        match self.proxy_call(ManagerFunctionArguments::CloseAllSessions) {
-            Ok(ManagerReturnValue::CloseAllSessions) => Ok(()),
-            Ok(_) => {
-                error!("unexpected return value from manager");
-                Err(())
-            }
-            Err(()) => Err(()),
-        }
+        manager_proxy_fn_impl!(
+            self,
+            ManagerArguments::CloseAllSessions,
+            ManagerReturnValue::CloseAllSessions
+        )
     }
 
     pub fn start_search(
@@ -178,14 +180,11 @@ impl ManagerProxy {
         session: CK_SESSION_HANDLE,
         attrs: Vec<(CK_ATTRIBUTE_TYPE, Vec<u8>)>,
     ) -> Result<(), ()> {
-        match self.proxy_call(ManagerFunctionArguments::StartSearch(session, attrs)) {
-            Ok(ManagerReturnValue::StartSearch(result)) => result,
-            Ok(_) => {
-                error!("unexpected return value from manager");
-                Err(())
-            }
-            Err(()) => Err(()),
-        }
+        manager_proxy_fn_impl!(
+            self,
+            ManagerArguments::StartSearch(session, attrs),
+            ManagerReturnValue::StartSearch
+        )
     }
 
     pub fn search(
@@ -193,25 +192,19 @@ impl ManagerProxy {
         session: CK_SESSION_HANDLE,
         max_objects: usize,
     ) -> Result<Vec<CK_OBJECT_HANDLE>, ()> {
-        match self.proxy_call(ManagerFunctionArguments::Search(session, max_objects)) {
-            Ok(ManagerReturnValue::Search(result)) => result,
-            Ok(_) => {
-                error!("unexpected return value from manager");
-                Err(())
-            }
-            Err(()) => Err(()),
-        }
+        manager_proxy_fn_impl!(
+            self,
+            ManagerArguments::Search(session, max_objects),
+            ManagerReturnValue::Search
+        )
     }
 
     pub fn clear_search(&mut self, session: CK_SESSION_HANDLE) -> Result<(), ()> {
-        match self.proxy_call(ManagerFunctionArguments::ClearSearch(session)) {
-            Ok(ManagerReturnValue::ClearSearch) => Ok(()),
-            Ok(_) => {
-                error!("unexpected return value from manager");
-                Err(())
-            }
-            Err(()) => Err(()),
-        }
+        manager_proxy_fn_impl!(
+            self,
+            ManagerArguments::ClearSearch(session),
+            ManagerReturnValue::ClearSearch
+        )
     }
 
     pub fn get_attributes(
@@ -219,17 +212,11 @@ impl ManagerProxy {
         object_handle: CK_OBJECT_HANDLE,
         attr_types: Vec<CK_ATTRIBUTE_TYPE>,
     ) -> Result<Vec<Option<Vec<u8>>>, ()> {
-        match self.proxy_call(ManagerFunctionArguments::GetAttributes(
-            object_handle,
-            attr_types,
-        )) {
-            Ok(ManagerReturnValue::GetAttributes(result)) => result,
-            Ok(_) => {
-                error!("unexpected return value from manager");
-                Err(())
-            }
-            Err(()) => Err(()),
-        }
+        manager_proxy_fn_impl!(
+            self,
+            ManagerArguments::GetAttributes(object_handle, attr_types,),
+            ManagerReturnValue::GetAttributes
+        )
     }
 
     pub fn start_sign(
@@ -238,16 +225,11 @@ impl ManagerProxy {
         key_handle: CK_OBJECT_HANDLE,
         params: Option<CK_RSA_PKCS_PSS_PARAMS>,
     ) -> Result<(), ()> {
-        match self.proxy_call(ManagerFunctionArguments::StartSign(
-            session, key_handle, params,
-        )) {
-            Ok(ManagerReturnValue::StartSign(result)) => result,
-            Ok(_) => {
-                error!("unexpected return value from manager");
-                Err(())
-            }
-            Err(()) => Err(()),
-        }
+        manager_proxy_fn_impl!(
+            self,
+            ManagerArguments::StartSign(session, key_handle, params),
+            ManagerReturnValue::StartSign
+        )
     }
 
     pub fn get_signature_length(
@@ -255,25 +237,19 @@ impl ManagerProxy {
         session: CK_SESSION_HANDLE,
         data: Vec<u8>,
     ) -> Result<usize, ()> {
-        match self.proxy_call(ManagerFunctionArguments::GetSignatureLength(session, data)) {
-            Ok(ManagerReturnValue::GetSignatureLength(result)) => result,
-            Ok(_) => {
-                error!("unexpected return value from manager");
-                Err(())
-            }
-            Err(()) => Err(()),
-        }
+        manager_proxy_fn_impl!(
+            self,
+            ManagerArguments::GetSignatureLength(session, data),
+            ManagerReturnValue::GetSignatureLength
+        )
     }
 
     pub fn sign(&mut self, session: CK_SESSION_HANDLE, data: Vec<u8>) -> Result<Vec<u8>, ()> {
-        match self.proxy_call(ManagerFunctionArguments::Sign(session, data)) {
-            Ok(ManagerReturnValue::Sign(result)) => result,
-            Ok(_) => {
-                error!("unexpected return value from manager");
-                Err(())
-            }
-            Err(()) => Err(()),
-        }
+        manager_proxy_fn_impl!(
+            self,
+            ManagerArguments::Sign(session, data),
+            ManagerReturnValue::Sign
+        )
     }
 }
 
@@ -345,12 +321,12 @@ impl Manager {
         }
     }
 
-    pub fn open_session(&mut self) -> CK_SESSION_HANDLE {
+    pub fn open_session(&mut self) -> Result<CK_SESSION_HANDLE, ()> {
         self.find_new_objects();
         let next_session = self.next_session;
         self.next_session += 1;
         self.sessions.insert(next_session);
-        next_session
+        Ok(next_session)
     }
 
     pub fn close_session(&mut self, session: CK_SESSION_HANDLE) -> Result<(), ()> {
@@ -361,8 +337,9 @@ impl Manager {
         }
     }
 
-    pub fn close_all_sessions(&mut self) {
+    pub fn close_all_sessions(&mut self) -> Result<(), ()> {
         self.sessions.clear();
+        Ok(())
     }
 
     fn get_next_handle(&mut self) -> CK_OBJECT_HANDLE {
@@ -426,8 +403,9 @@ impl Manager {
         }
     }
 
-    pub fn clear_search(&mut self, session: CK_SESSION_HANDLE) {
+    pub fn clear_search(&mut self, session: CK_SESSION_HANDLE) -> Result<(), ()> {
         self.searches.remove(&session);
+        Ok(())
     }
 
     pub fn get_attributes(
