@@ -15,9 +15,14 @@ use backend::*;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 
+/// Helper type for sending `ManagerArguments` to the real `Manager`.
 type ManagerArgumentsSender = Sender<ManagerArguments>;
+/// Helper type for receiving `ManagerReturnValue`s from the real `Manager`.
 type ManagerReturnValueReceiver = Receiver<ManagerReturnValue>;
 
+/// Helper enum that encapsulates arguments to send from the `ManagerProxy` to the real `Manager`.
+/// `ManagerArguments::Stop` is a special variant that stops the background thread and drops the
+/// `Manager`.
 enum ManagerArguments {
     OpenSession,
     CloseSession(CK_SESSION_HANDLE),
@@ -33,8 +38,12 @@ enum ManagerArguments {
     ),
     GetSignatureLength(CK_SESSION_HANDLE, Vec<u8>),
     Sign(CK_SESSION_HANDLE, Vec<u8>),
+    Stop,
 }
 
+/// Helper enum that encapsulates return values from the real `Manager` that are sent back to the
+/// `ManagerProxy`. `ManagerReturnValue::Stop` is a special variant that indicates that the
+/// `Manager` will stop.
 enum ManagerReturnValue {
     OpenSession(Result<CK_SESSION_HANDLE, ()>),
     CloseSession(Result<(), ()>),
@@ -46,8 +55,13 @@ enum ManagerReturnValue {
     StartSign(Result<(), ()>),
     GetSignatureLength(Result<usize, ()>),
     Sign(Result<Vec<u8>, ()>),
+    Stop(Result<(), ()>),
 }
 
+/// Helper macro to implement the body of each public `ManagerProxy` function. Takes a
+/// `ManagerProxy` instance (should always be `self`), a `ManagerArguments` representing the
+/// `Manager` function to call and the arguments to use, and the qualified type of the expected
+/// `ManagerReturnValue` that will be received from the `Manager` when it is done.
 macro_rules! manager_proxy_fn_impl {
     ($manager:ident, $argument_enum:expr, $return_type:path) => {
         match $manager.proxy_call($argument_enum) {
@@ -61,6 +75,10 @@ macro_rules! manager_proxy_fn_impl {
     };
 }
 
+/// `ManagerProxy` synchronously proxies calls from any thread to the `Manager` that runs on a
+/// single thread. This is necessary because the underlying OS APIs in use are not guaranteed to be
+/// thread-safe (e.g. they may use thread-local storage). Using it should be identical to using the
+/// real `Manager`.
 pub struct ManagerProxy {
     sender: ManagerArgumentsSender,
     receiver: ManagerReturnValueReceiver,
@@ -117,6 +135,14 @@ impl ManagerProxy {
                     ManagerArguments::Sign(session, data) => {
                         ManagerReturnValue::Sign(real_manager.sign(session, &data))
                     }
+                    ManagerArguments::Stop => {
+                        debug!("ManagerArguments::Stop received - stopping Manager thread.");
+                        ManagerReturnValue::Stop(Ok(()))
+                    }
+                };
+                let stop_after_send = match &results {
+                    &ManagerReturnValue::Stop(_) => true,
+                    _ => false,
                 };
                 match manager_sender.send(results) {
                     Ok(()) => {}
@@ -124,6 +150,9 @@ impl ManagerProxy {
                         error!("error send()ing results from Manager: {}", e);
                         break;
                     }
+                }
+                if stop_after_send {
+                    break;
                 }
             }
         });
@@ -250,6 +279,10 @@ impl ManagerProxy {
             ManagerArguments::Sign(session, data),
             ManagerReturnValue::Sign
         )
+    }
+
+    pub fn stop(&mut self) -> Result<(), ()> {
+        manager_proxy_fn_impl!(self, ManagerArguments::Stop, ManagerReturnValue::Stop)
     }
 }
 

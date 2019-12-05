@@ -34,7 +34,10 @@ use manager::ManagerProxy;
 
 lazy_static! {
     /// The singleton `ManagerProxy` that handles state with respect to PKCS #11. Only one thread
-    /// may use it at a time.
+    /// may use it at a time, but there is no restriction on which threads may use it. However, as
+    /// OS APIs being used are not necessarily thread-safe (e.g. they may be using
+    /// thread-local-storage), the `ManagerProxy` forwards calls from any thread to a single thread
+    /// where the real `Manager` does the actual work.
     static ref MANAGER_PROXY: Mutex<ManagerProxy> = {
         env_logger::init();
         Mutex::new(ManagerProxy::new())
@@ -66,8 +69,17 @@ extern "C" fn C_Initialize(_pInitArgs: CK_C_INITIALIZE_ARGS_PTR) -> CK_RV {
 }
 
 extern "C" fn C_Finalize(_pReserved: CK_VOID_PTR) -> CK_RV {
-    debug!("C_Finalize: CKR_OK");
-    CKR_OK
+    let mut manager = try_to_get_manager!();
+    match manager.stop() {
+        Ok(()) => {
+            debug!("C_Finalize: CKR_OK");
+            CKR_OK
+        }
+        Err(()) => {
+            debug!("C_Finalize: CKR_DEVICE_ERROR");
+            CKR_DEVICE_ERROR
+        }
+    }
 }
 
 // The specification mandates that these strings be padded with spaces to the appropriate length.
@@ -379,10 +391,8 @@ extern "C" fn C_GetObjectSize(
 }
 
 /// This gets called to obtain the values of a number of attributes of an object identified by the
-/// given handle.
-/// TODO: update this. The ManagerProxy handles everything.
-///This module implements this by requesting the object from the `Manager` and
-/// attempting to get the value of each attribute. If a specified attribute is not defined on the
+/// given handle. This module implements this by requesting that the `ManagerProxy` find the object
+/// and attempt to get the value of each attribute. If a specified attribute is not defined on the
 /// object, the length of that attribute is set to -1 to indicate that it is not available.
 /// This gets called twice: once to obtain the lengths of the attributes and again to get the
 /// values.
