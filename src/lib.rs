@@ -12,6 +12,8 @@ extern crate core_foundation;
 extern crate env_logger;
 #[macro_use]
 extern crate lazy_static;
+#[cfg(target_os = "macos")]
+extern crate libloading;
 #[macro_use]
 extern crate log;
 extern crate pkcs11;

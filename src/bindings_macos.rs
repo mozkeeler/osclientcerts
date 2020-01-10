@@ -425,22 +425,6 @@ extern "C" {
     pub fn SecCertificateCopySubjectSummary(certificate: SecCertificateRef) -> CFStringRef;
 }
 extern "C" {
-    pub fn SecCertificateCopyNormalizedIssuerSequence(certificate: SecCertificateRef) -> CFDataRef;
-}
-extern "C" {
-    pub fn SecCertificateCopyNormalizedSubjectSequence(certificate: SecCertificateRef)
-        -> CFDataRef;
-}
-extern "C" {
-    pub fn SecCertificateCopyKey(certificate: SecCertificateRef) -> SecKeyRef;
-}
-extern "C" {
-    pub fn SecCertificateCopySerialNumberData(
-        certificate: SecCertificateRef,
-        error: *mut CFErrorRef,
-    ) -> CFDataRef;
-}
-extern "C" {
     pub fn SecIdentityGetTypeID() -> CFTypeID;
 }
 extern "C" {
@@ -488,12 +472,6 @@ extern "C" {
 extern "C" {
     pub fn SecKeyGetTypeID() -> CFTypeID;
 }
-extern "C" {
-    pub fn SecKeyCopyExternalRepresentation(key: SecKeyRef, error: *mut CFErrorRef) -> CFDataRef;
-}
-extern "C" {
-    pub fn SecKeyCopyAttributes(key: SecKeyRef) -> CFDictionaryRef;
-}
 pub type SecKeyAlgorithm = CFStringRef;
 extern "C" {
     pub static kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw: SecKeyAlgorithm;
@@ -521,12 +499,4 @@ extern "C" {
 }
 extern "C" {
     pub static kSecKeyAlgorithmRSASignatureDigestPSSSHA512 : SecKeyAlgorithm;
-}
-extern "C" {
-    pub fn SecKeyCreateSignature(
-        key: SecKeyRef,
-        algorithm: SecKeyAlgorithm,
-        dataToSign: CFDataRef,
-        error: *mut CFErrorRef,
-    ) -> CFDataRef;
 }
