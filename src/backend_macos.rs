@@ -175,6 +175,16 @@ impl SecurityFramework {
             None => Err(()),
         }
     }
+
+    fn get_sec_string_constant(&self, symbol_id: &[u8]) -> Result<CFStringRef, ()> {
+        match &self.library {
+            Some(library) => unsafe {
+                let symbol: Symbol<*const CFStringRef> = library.get(symbol_id).map_err(|_| ())?;
+                Ok(**symbol)
+            },
+            None => Err(()),
+        }
+    }
 }
 
 macro_rules! try_to_get_security_framework {
@@ -358,33 +368,41 @@ impl SignParams {
         let pss_params = match params {
             Some(pss_params) => pss_params,
             None => {
-                return Ok(SignParams::RSA(unsafe {
-                    kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw
-                }))
+                let security_framework = try_to_get_security_framework!();
+                return Ok(SignParams::RSA(
+                    security_framework.get_sec_string_constant(
+                        b"kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw\0".as_ref(),
+                    )?,
+                ));
             }
         };
-        let algorithm = match pss_params.hashAlg {
-            CKM_SHA_1 => unsafe { kSecKeyAlgorithmRSASignatureDigestPSSSHA1 },
-            CKM_SHA256 => unsafe { kSecKeyAlgorithmRSASignatureDigestPSSSHA256 },
-            CKM_SHA384 => unsafe { kSecKeyAlgorithmRSASignatureDigestPSSSHA384 },
-            CKM_SHA512 => unsafe { kSecKeyAlgorithmRSASignatureDigestPSSSHA512 },
-            _ => {
-                error!(
-                    "unsupported algorithm to use with RSA-PSS: {}",
-                    unsafe_packed_field_access!(pss_params.hashAlg)
-                );
-                return Err(());
-            }
+        let algorithm = {
+            let security_framework = try_to_get_security_framework!();
+            let algorithm_id = match pss_params.hashAlg {
+                CKM_SHA_1 => b"kSecKeyAlgorithmRSASignatureDigestPSSSHA1\0".as_ref(),
+                CKM_SHA256 => b"kSecKeyAlgorithmRSASignatureDigestPSSSHA256\0".as_ref(),
+                CKM_SHA384 => b"kSecKeyAlgorithmRSASignatureDigestPSSSHA384\0".as_ref(),
+                CKM_SHA512 => b"kSecKeyAlgorithmRSASignatureDigestPSSSHA512\0".as_ref(),
+                _ => {
+                    error!(
+                        "unsupported algorithm to use with RSA-PSS: {}",
+                        unsafe_packed_field_access!(pss_params.hashAlg)
+                    );
+                    return Err(());
+                }
+            };
+            security_framework.get_sec_string_constant(algorithm_id)?
         };
-        Ok(SignParams::EC(algorithm))
+        Ok(SignParams::RSA(algorithm))
     }
 
     fn new_ec_params(data_len: usize) -> Result<SignParams, ()> {
-        let algorithm = match data_len {
-            20 => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA1 },
-            32 => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA256 },
-            48 => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA384 },
-            64 => unsafe { kSecKeyAlgorithmECDSASignatureDigestX962SHA512 },
+        let security_framework = try_to_get_security_framework!();
+        let algorithm_id = match data_len {
+            20 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA1\0".as_ref(),
+            32 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA256\0".as_ref(),
+            48 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA384\0".as_ref(),
+            64 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA512\0".as_ref(),
             _ => {
                 error!(
                     "Unexpected digested signature input length for ECDSA: {}",
@@ -393,6 +411,7 @@ impl SignParams {
                 return Err(());
             }
         };
+        let algorithm = security_framework.get_sec_string_constant(algorithm_id)?;
         Ok(SignParams::EC(algorithm))
     }
 
@@ -450,6 +469,11 @@ impl Key {
         let key_size_in_bits: CFNumber = get_key_attribute(&key, unsafe { kSecAttrKeySizeInBits })?;
         let mut modulus = None;
         let mut ec_params = None;
+        let sec_attr_key_type_ec = {
+            let security_framework = try_to_get_security_framework!();
+            security_framework
+                .get_sec_string_constant(b"kSecAttrKeyTypeECSECPrimeRandom\0".as_ref())?
+        };
         let (key_type_enum, key_type_attribute) =
             if key_type.as_concrete_TypeRef() == unsafe { kSecAttrKeyTypeRSA } {
                 // TODO: presumably this is fallible and we should check it before wrapping
@@ -464,7 +488,7 @@ impl Key {
                 let modulus_value = read_rsa_modulus(public_key.bytes())?;
                 modulus = Some(modulus_value);
                 (KeyType::RSA, CKK_RSA)
-            } else if key_type.as_concrete_TypeRef() == unsafe { kSecAttrKeyTypeECSECPrimeRandom } {
+            } else if key_type.as_concrete_TypeRef() == sec_attr_key_type_ec {
                 // Assume all EC keys are secp256r1, secp384r1, or secp521r1. This
                 // is wrong, but the API doesn't seem to give us a way to determine
                 // which curve this key is on.

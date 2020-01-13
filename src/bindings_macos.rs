@@ -455,9 +455,6 @@ extern "C" {
     pub static kSecAttrKeyTypeRSA: CFStringRef;
 }
 extern "C" {
-    pub static kSecAttrKeyTypeECSECPrimeRandom: CFStringRef;
-}
-extern "C" {
     pub static kSecMatchLimit: CFStringRef;
 }
 extern "C" {
@@ -473,30 +470,3 @@ extern "C" {
     pub fn SecKeyGetTypeID() -> CFTypeID;
 }
 pub type SecKeyAlgorithm = CFStringRef;
-extern "C" {
-    pub static kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw: SecKeyAlgorithm;
-}
-extern "C" {
-    pub static kSecKeyAlgorithmECDSASignatureDigestX962SHA1: SecKeyAlgorithm;
-}
-extern "C" {
-    pub static kSecKeyAlgorithmECDSASignatureDigestX962SHA256: SecKeyAlgorithm;
-}
-extern "C" {
-    pub static kSecKeyAlgorithmECDSASignatureDigestX962SHA384: SecKeyAlgorithm;
-}
-extern "C" {
-    pub static kSecKeyAlgorithmECDSASignatureDigestX962SHA512: SecKeyAlgorithm;
-}
-extern "C" {
-    pub static kSecKeyAlgorithmRSASignatureDigestPSSSHA1 : SecKeyAlgorithm;
-}
-extern "C" {
-    pub static kSecKeyAlgorithmRSASignatureDigestPSSSHA256 : SecKeyAlgorithm;
-}
-extern "C" {
-    pub static kSecKeyAlgorithmRSASignatureDigestPSSSHA384 : SecKeyAlgorithm;
-}
-extern "C" {
-    pub static kSecKeyAlgorithmRSASignatureDigestPSSSHA512 : SecKeyAlgorithm;
-}
