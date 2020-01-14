@@ -1,3 +1,8 @@
+/* -*- Mode: rust; rust-indent-offset: 4 -*- */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #![allow(non_upper_case_globals)]
 #![allow(dead_code)]
 
@@ -29,16 +34,10 @@ pub type SecIdentityRef = *const __SecIdentity;
 declare_TCFType!(SecIdentity, SecIdentityRef);
 impl_TCFType!(SecIdentity, SecIdentityRef, SecIdentityGetTypeID);
 
-// The APIs we're using are thread-safe and we're serializing use of the
-// Manager, so this should be safe.
+// The manager runs this code on one thread only, so this should be safe.
 pub struct SecIdentityHolder(SecIdentity);
 unsafe impl Send for SecIdentityHolder {}
 unsafe impl Sync for SecIdentityHolder {}
-
-#[derive(Eq, PartialEq)]
-pub struct CFStringRefHolder(CFStringRef);
-unsafe impl Send for CFStringRefHolder {}
-unsafe impl Sync for CFStringRefHolder {}
 
 #[repr(C)]
 pub struct __SecCertificate(c_void);
