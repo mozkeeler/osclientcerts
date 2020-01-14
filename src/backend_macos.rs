@@ -251,6 +251,20 @@ fn sec_certificate_copy_data(certificate: &SecCertificate) -> Result<CFData, ()>
     Ok(unsafe { CFData::wrap_under_create_rule(result) })
 }
 
+fn sec_identity_copy_private_key(identity: &SecIdentity) -> Result<SecKey, ()> {
+    let mut key = std::ptr::null();
+    let status = unsafe { SecIdentityCopyPrivateKey(identity.as_concrete_TypeRef(), &mut key) };
+    if status != errSecSuccess {
+        error!("SecIdentityCopyPrivateKey failed: {}", status);
+        return Err(());
+    }
+    if key.is_null() {
+        error!("SecIdentityCopyPrivateKey didn't set key?");
+        return Err(());
+    }
+    Ok(unsafe { SecKey::wrap_under_create_rule(key) })
+}
+
 pub struct Cert {
     class: Vec<u8>,
     token: Vec<u8>,
@@ -448,25 +462,9 @@ pub struct Key {
 
 impl Key {
     fn new(identity: &SecIdentity) -> Result<Key, ()> {
-        let mut certificate = std::ptr::null();
-        let status =
-            unsafe { SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate) };
-        if status != errSecSuccess {
-            error!("SecIdentityCopyCertificate failed: {}", status);
-            return Err(());
-        }
-        if certificate.is_null() {
-            error!("couldn't get certificate from identity?");
-            return Err(());
-        }
-        let certificate = unsafe { SecCertificate::wrap_under_create_rule(certificate) };
-        let der = unsafe {
-            CFData::wrap_under_create_rule(SecCertificateCopyData(
-                certificate.as_concrete_TypeRef(),
-            ))
-        };
+        let certificate = sec_identity_copy_certificate(identity)?;
+        let der = sec_certificate_copy_data(&certificate)?;
         let id = Sha256::digest(der.bytes()).to_vec();
-
         let key = SECURITY_FRAMEWORK.sec_certificate_copy_key(certificate.as_concrete_TypeRef())?;
         let key_type: CFString = get_key_attribute(&key, unsafe { kSecAttrKeyType })?;
         let key_size_in_bits: CFNumber = get_key_attribute(&key, unsafe { kSecAttrKeySizeInBits })?;
@@ -617,19 +615,7 @@ impl Key {
         data: &[u8],
         params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
     ) -> Result<Vec<u8>, ()> {
-        let key = unsafe {
-            let mut key = std::ptr::null();
-            let status = SecIdentityCopyPrivateKey(self.identity.as_concrete_TypeRef(), &mut key);
-            if status != errSecSuccess {
-                error!("SecIdentityCopyPrivateKey failed: {}", status);
-                return Err(());
-            }
-            if key.is_null() {
-                error!("SecIdentityCopyPrivateKey didn't set key?");
-                return Err(());
-            }
-            SecKey::wrap_under_create_rule(key)
-        };
+        let key = sec_identity_copy_private_key(&self.identity)?;
         let sign_params = SignParams::new(self.key_type_enum, data.len(), params)?;
         let signing_algorithm = sign_params.get_algorithm();
         let data = CFData::from_buffer(data);
