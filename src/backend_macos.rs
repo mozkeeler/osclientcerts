@@ -82,9 +82,8 @@ impl SecurityFramework {
                     &mut error,
                 );
                 if result.is_null() {
-                    error!("SecKeyCreateSignature failed");
                     let error = CFError::wrap_under_create_rule(error);
-                    error.show(); // TODO: log contents using logging system, not stderr
+                    error!("SecKeyCreateSignature failed: {}", error);
                     return Err(());
                 }
                 Ok(CFData::wrap_under_create_rule(result))
@@ -119,9 +118,8 @@ impl SecurityFramework {
                 let mut error = std::ptr::null_mut();
                 let result = func(key.as_concrete_TypeRef(), &mut error);
                 if result.is_null() {
-                    error!("SecKeyCopyExternalRepresentation failed");
                     let error = CFError::wrap_under_create_rule(error);
-                    error.show(); // TODO: log contents using logging system, not stderr
+                    error!("SecKeyCopyExternalRepresentation failed: {}", error);
                     return Err(());
                 }
                 Ok(CFData::wrap_under_create_rule(result))
@@ -144,9 +142,8 @@ impl SecurityFramework {
                 let mut error = std::ptr::null_mut();
                 let result = func(certificate.as_concrete_TypeRef(), &mut error);
                 if result.is_null() {
-                    error!("SecCertificateCopySerialNumberData failed");
                     let error = CFError::wrap_under_create_rule(error);
-                    error.show(); // TODO: log contents using logging system, not stderr
+                    error!("SecCertificateCopySerialNumberData failed: {}", error);
                     return Err(());
                 }
                 Ok(CFData::wrap_under_create_rule(result))
