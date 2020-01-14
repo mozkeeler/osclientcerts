@@ -32,11 +32,6 @@ pub type SecIdentityRef = *const __SecIdentity;
 declare_TCFType!(SecIdentity, SecIdentityRef);
 impl_TCFType!(SecIdentity, SecIdentityRef, SecIdentityGetTypeID);
 
-// The manager runs this code on one thread only, so this should be safe.
-pub struct SecIdentityHolder(SecIdentity);
-unsafe impl Send for SecIdentityHolder {}
-unsafe impl Sync for SecIdentityHolder {}
-
 #[repr(C)]
 pub struct __SecCertificate(c_void);
 pub type SecCertificateRef = *const __SecCertificate;
@@ -276,6 +271,7 @@ impl Cert {
             subject: subject.bytes().to_vec(),
         })
     }
+
     fn class(&self) -> &[u8] {
         &self.class
     }
@@ -425,7 +421,7 @@ impl SignParams {
 }
 
 pub struct Key {
-    identity: SecIdentityHolder,
+    identity: SecIdentity,
     class: Vec<u8>,
     token: Vec<u8>,
     id: Vec<u8>,
@@ -500,7 +496,7 @@ impl Key {
             };
 
         Ok(Key {
-            identity: SecIdentityHolder(identity.clone()),
+            identity: identity.clone(),
             class: serialize_uint(CKO_PRIVATE_KEY)?,
             token: serialize_uint(CK_TRUE)?,
             id,
@@ -609,7 +605,7 @@ impl Key {
     ) -> Result<Vec<u8>, ()> {
         let key = unsafe {
             let mut key = std::ptr::null();
-            let status = SecIdentityCopyPrivateKey(self.identity.0.as_concrete_TypeRef(), &mut key);
+            let status = SecIdentityCopyPrivateKey(self.identity.as_concrete_TypeRef(), &mut key);
             if status != errSecSuccess {
                 error!("SecIdentityCopyPrivateKey failed: {}", status);
                 return Err(());
