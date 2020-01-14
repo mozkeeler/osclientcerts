@@ -68,8 +68,7 @@ impl SecurityFramework {
         key: SecKeyRef,
         algorithm: SecKeyAlgorithm,
         data_to_sign: CFDataRef,
-        error: *mut CFErrorRef,
-    ) -> Result<CFDataRef, ()> {
+    ) -> Result<CFData, ()> {
         match &self.library {
             Some(library) => unsafe {
                 let func: Symbol<
@@ -80,18 +79,31 @@ impl SecurityFramework {
                         *mut CFErrorRef,
                     ) -> CFDataRef,
                 > = library.get(b"SecKeyCreateSignature\0").map_err(|_| ())?;
-                Ok(func(key, algorithm, data_to_sign, error))
+                let mut error = std::ptr::null_mut();
+                let result = func(key, algorithm, data_to_sign, &mut error);
+                if result.is_null() {
+                    error!("SecKeyCreateSignature failed");
+                    let error = CFError::wrap_under_create_rule(error);
+                    error.show(); // TODO: log contents using logging system, not stderr
+                    return Err(());
+                }
+                Ok(CFData::wrap_under_create_rule(result))
             },
             None => Err(()),
         }
     }
 
-    fn sec_key_copy_attributes(&self, key: SecKeyRef) -> Result<CFDictionaryRef, ()> {
+    fn sec_key_copy_attributes<T>(&self, key: SecKeyRef) -> Result<CFDictionary<CFString, T>, ()> {
         match &self.library {
             Some(library) => unsafe {
                 let func: Symbol<unsafe extern "C" fn(SecKeyRef) -> CFDictionaryRef> =
                     library.get(b"SecKeyCopyAttributes\0").map_err(|_| ())?;
-                Ok(func(key))
+                let result = func(key);
+                if result.is_null() {
+                    error!("SecKeyCopyAttributes failed");
+                    return Err(());
+                }
+                Ok(CFDictionary::wrap_under_create_rule(result))
             },
             None => Err(()),
         }
@@ -101,14 +113,19 @@ impl SecurityFramework {
         &self,
         key: SecKeyRef,
         error: *mut CFErrorRef,
-    ) -> Result<CFDataRef, ()> {
+    ) -> Result<CFData, ()> {
         match &self.library {
             Some(library) => unsafe {
                 let func: Symbol<unsafe extern "C" fn(SecKeyRef, *mut CFErrorRef) -> CFDataRef> =
                     library
                         .get(b"SecKeyCopyExternalRepresentation\0")
                         .map_err(|_| ())?;
-                Ok(func(key, error))
+                let result = func(key, error);
+                if result.is_null() {
+                    error!("SecKeyCopyExternalRepresentation failed");
+                    return Err(());
+                }
+                Ok(CFData::wrap_under_create_rule(result))
             },
             None => Err(()),
         }
@@ -117,8 +134,7 @@ impl SecurityFramework {
     fn sec_certificate_copy_serial_number_data(
         &self,
         certificate: SecCertificateRef,
-        error: *mut CFErrorRef,
-    ) -> Result<CFDataRef, ()> {
+    ) -> Result<CFData, ()> {
         match &self.library {
             Some(library) => unsafe {
                 let func: Symbol<
@@ -126,7 +142,15 @@ impl SecurityFramework {
                 > = library
                     .get(b"SecCertificateCopySerialNumberData\0")
                     .map_err(|_| ())?;
-                Ok(func(certificate, error))
+                let mut error = std::ptr::null_mut();
+                let result = func(certificate, &mut error);
+                if result.is_null() {
+                    error!("SecCertificateCopySerialNumberData failed");
+                    let error = CFError::wrap_under_create_rule(error);
+                    error.show(); // TODO: log contents using logging system, not stderr
+                    return Err(());
+                }
+                Ok(CFData::wrap_under_create_rule(result))
             },
             None => Err(()),
         }
@@ -135,13 +159,18 @@ impl SecurityFramework {
     fn sec_certificate_copy_normalized_issuer_sequence(
         &self,
         certificate: SecCertificateRef,
-    ) -> Result<CFDataRef, ()> {
+    ) -> Result<CFData, ()> {
         match &self.library {
             Some(library) => unsafe {
                 let func: Symbol<unsafe extern "C" fn(SecCertificateRef) -> CFDataRef> = library
                     .get(b"SecCertificateCopyNormalizedIssuerSequence\0")
                     .map_err(|_| ())?;
-                Ok(func(certificate))
+                let result = func(certificate);
+                if result.is_null() {
+                    error!("SecCertificateCopyNormalizedIssuerSequence failed");
+                    return Err(());
+                }
+                Ok(CFData::wrap_under_create_rule(result))
             },
             None => Err(()),
         }
@@ -150,24 +179,34 @@ impl SecurityFramework {
     fn sec_certificate_copy_normalized_subject_sequence(
         &self,
         certificate: SecCertificateRef,
-    ) -> Result<CFDataRef, ()> {
+    ) -> Result<CFData, ()> {
         match &self.library {
             Some(library) => unsafe {
                 let func: Symbol<unsafe extern "C" fn(SecCertificateRef) -> CFDataRef> = library
                     .get(b"SecCertificateCopyNormalizedSubjectSequence\0")
                     .map_err(|_| ())?;
-                Ok(func(certificate))
+                let result = func(certificate);
+                if result.is_null() {
+                    error!("SecCertificateCopyNormalizedSubjectSequence failed");
+                    return Err(());
+                }
+                Ok(CFData::wrap_under_create_rule(result))
             },
             None => Err(()),
         }
     }
 
-    fn sec_certificate_copy_key(&self, certificate: SecCertificateRef) -> Result<SecKeyRef, ()> {
+    fn sec_certificate_copy_key(&self, certificate: SecCertificateRef) -> Result<SecKey, ()> {
         match &self.library {
             Some(library) => unsafe {
                 let func: Symbol<unsafe extern "C" fn(SecCertificateRef) -> SecKeyRef> =
                     library.get(b"SecCertificateCopyKey\0").map_err(|_| ())?;
-                Ok(func(certificate))
+                let result = func(certificate);
+                if result.is_null() {
+                    error!("SecCertificateCopyKey failed");
+                    return Err(());
+                }
+                Ok(SecKey::wrap_under_create_rule(result))
             },
             None => Err(()),
         }
@@ -220,26 +259,12 @@ impl Cert {
             ))
         };
         let id = Sha256::digest(der.bytes()).to_vec();
-        let issuer = unsafe {
-            let result = SECURITY_FRAMEWORK.sec_certificate_copy_normalized_issuer_sequence(
-                certificate.as_concrete_TypeRef(),
-            )?;
-            CFData::wrap_under_create_rule(result)
-        };
-        let serial_number = unsafe {
-            let result = SECURITY_FRAMEWORK.sec_certificate_copy_serial_number_data(
-                certificate.as_concrete_TypeRef(),
-                std::ptr::null_mut(),
-            )?;
-            CFData::wrap_under_create_rule(result)
-        };
-        let subject = unsafe {
-            let result = SECURITY_FRAMEWORK.sec_certificate_copy_normalized_subject_sequence(
-                certificate.as_concrete_TypeRef(),
-            )?;
-            CFData::wrap_under_create_rule(result)
-        };
-
+        let issuer = SECURITY_FRAMEWORK
+            .sec_certificate_copy_normalized_issuer_sequence(certificate.as_concrete_TypeRef())?;
+        let serial_number = SECURITY_FRAMEWORK
+            .sec_certificate_copy_serial_number_data(certificate.as_concrete_TypeRef())?;
+        let subject = SECURITY_FRAMEWORK
+            .sec_certificate_copy_normalized_subject_sequence(certificate.as_concrete_TypeRef())?;
         Ok(Cert {
             class: serialize_uint(CKO_CERTIFICATE)?,
             token: serialize_uint(CK_TRUE)?,
@@ -433,11 +458,6 @@ impl Key {
         let id = Sha256::digest(der.bytes()).to_vec();
 
         let key = SECURITY_FRAMEWORK.sec_certificate_copy_key(certificate.as_concrete_TypeRef())?;
-        if key.is_null() {
-            error!("couldn't get key from certificate?");
-            return Err(());
-        }
-        let key = unsafe { SecKey::wrap_under_create_rule(key) };
         let key_type: CFString = get_key_attribute(&key, unsafe { kSecAttrKeyType })?;
         let key_size_in_bits: CFNumber = get_key_attribute(&key, unsafe { kSecAttrKeySizeInBits })?;
         let mut modulus = None;
@@ -446,14 +466,10 @@ impl Key {
             .get_sec_string_constant(b"kSecAttrKeyTypeECSECPrimeRandom\0".as_ref())?;
         let (key_type_enum, key_type_attribute) =
             if key_type.as_concrete_TypeRef() == unsafe { kSecAttrKeyTypeRSA } {
-                // TODO: presumably this is fallible and we should check it before wrapping
-                let public_key = unsafe {
-                    let result = SECURITY_FRAMEWORK.sec_key_copy_external_representation(
-                        key.as_concrete_TypeRef(),
-                        std::ptr::null_mut(),
-                    )?;
-                    CFData::wrap_under_create_rule(result)
-                };
+                let public_key = SECURITY_FRAMEWORK.sec_key_copy_external_representation(
+                    key.as_concrete_TypeRef(),
+                    std::ptr::null_mut(),
+                )?;
                 let modulus_value = read_rsa_modulus(public_key.bytes())?;
                 modulus = Some(modulus_value);
                 (KeyType::RSA, CKK_RSA)
@@ -602,22 +618,11 @@ impl Key {
         let sign_params = SignParams::new(self.key_type_enum, data.len(), params)?;
         let signing_algorithm = sign_params.get_algorithm();
         let data = CFData::from_buffer(data);
-        let signature = unsafe {
-            let mut error = std::ptr::null_mut();
-            let result = SECURITY_FRAMEWORK.sec_key_create_signature(
-                key.as_concrete_TypeRef(),
-                *signing_algorithm,
-                data.as_concrete_TypeRef(),
-                &mut error,
-            )?;
-            if result.is_null() {
-                error!("SecKeyCreateSignature failed");
-                let error = CFError::wrap_under_create_rule(error);
-                error.show(); // TODO: log contents using logging system, not stderr
-                return Err(());
-            }
-            CFData::wrap_under_create_rule(result)
-        };
+        let signature = SECURITY_FRAMEWORK.sec_key_create_signature(
+            key.as_concrete_TypeRef(),
+            *signing_algorithm,
+            data.as_concrete_TypeRef(),
+        )?;
         let signature_value = match self.key_type_enum {
             KeyType::EC => {
                 // We need to convert the DER Ecdsa-Sig-Value to the
@@ -672,11 +677,8 @@ pub fn list_objects() -> Vec<Object> {
 }
 
 fn get_key_attribute<T: TCFType + Clone>(key: &SecKey, attr: CFStringRef) -> Result<T, ()> {
-    // TODO: is SecKeyCopyAttributes fallible? will wrap_under_create_rule panic?
-    let attributes: CFDictionary<CFString, T> = unsafe {
-        let attributes = SECURITY_FRAMEWORK.sec_key_copy_attributes(key.as_concrete_TypeRef())?;
-        CFDictionary::wrap_under_create_rule(attributes)
-    };
+    let attributes: CFDictionary<CFString, T> =
+        SECURITY_FRAMEWORK.sec_key_copy_attributes(key.as_concrete_TypeRef())?;
     match attributes.find(attr as *const _) {
         Some(value) => Ok((*value).clone()),
         None => Err(()),
