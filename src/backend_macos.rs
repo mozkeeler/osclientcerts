@@ -4,13 +4,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #![allow(non_upper_case_globals)]
-#![allow(dead_code)]
 
 use libloading::{Library, Symbol};
 use pkcs11::types::*;
 use sha2::{Digest, Sha256};
 use std::os::raw::c_void;
-use std::sync::Mutex;
 
 use core_foundation::array::*;
 use core_foundation::base::*;
@@ -52,7 +50,7 @@ declare_TCFType!(SecKey, SecKeyRef);
 impl_TCFType!(SecKey, SecKeyRef, SecKeyGetTypeID);
 
 lazy_static! {
-    static ref SECURITY_FRAMEWORK: Mutex<SecurityFramework> = Mutex::new(SecurityFramework::new());
+    static ref SECURITY_FRAMEWORK: SecurityFramework = SecurityFramework::new();
 }
 
 struct SecurityFramework {
@@ -186,21 +184,6 @@ impl SecurityFramework {
     }
 }
 
-macro_rules! try_to_get_security_framework {
-    () => {
-        match SECURITY_FRAMEWORK.lock() {
-            Ok(security_framework) => security_framework,
-            Err(poison_error) => {
-                error!(
-                    "previous thread panicked acquiring manager lock: {}",
-                    poison_error
-                );
-                return Err(());
-            }
-        }
-    };
-}
-
 pub struct Cert {
     class: Vec<u8>,
     token: Vec<u8>,
@@ -238,23 +221,20 @@ impl Cert {
         };
         let id = Sha256::digest(der.bytes()).to_vec();
         let issuer = unsafe {
-            let security_framework = try_to_get_security_framework!();
-            let result = security_framework.sec_certificate_copy_normalized_issuer_sequence(
+            let result = SECURITY_FRAMEWORK.sec_certificate_copy_normalized_issuer_sequence(
                 certificate.as_concrete_TypeRef(),
             )?;
             CFData::wrap_under_create_rule(result)
         };
         let serial_number = unsafe {
-            let security_framework = try_to_get_security_framework!();
-            let result = security_framework.sec_certificate_copy_serial_number_data(
+            let result = SECURITY_FRAMEWORK.sec_certificate_copy_serial_number_data(
                 certificate.as_concrete_TypeRef(),
                 std::ptr::null_mut(),
             )?;
             CFData::wrap_under_create_rule(result)
         };
         let subject = unsafe {
-            let security_framework = try_to_get_security_framework!();
-            let result = security_framework.sec_certificate_copy_normalized_subject_sequence(
+            let result = SECURITY_FRAMEWORK.sec_certificate_copy_normalized_subject_sequence(
                 certificate.as_concrete_TypeRef(),
             )?;
             CFData::wrap_under_create_rule(result)
@@ -367,16 +347,14 @@ impl SignParams {
         let pss_params = match params {
             Some(pss_params) => pss_params,
             None => {
-                let security_framework = try_to_get_security_framework!();
                 return Ok(SignParams::RSA(
-                    security_framework.get_sec_string_constant(
+                    SECURITY_FRAMEWORK.get_sec_string_constant(
                         b"kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw\0".as_ref(),
                     )?,
                 ));
             }
         };
         let algorithm = {
-            let security_framework = try_to_get_security_framework!();
             let algorithm_id = match pss_params.hashAlg {
                 CKM_SHA_1 => b"kSecKeyAlgorithmRSASignatureDigestPSSSHA1\0".as_ref(),
                 CKM_SHA256 => b"kSecKeyAlgorithmRSASignatureDigestPSSSHA256\0".as_ref(),
@@ -390,13 +368,12 @@ impl SignParams {
                     return Err(());
                 }
             };
-            security_framework.get_sec_string_constant(algorithm_id)?
+            SECURITY_FRAMEWORK.get_sec_string_constant(algorithm_id)?
         };
         Ok(SignParams::RSA(algorithm))
     }
 
     fn new_ec_params(data_len: usize) -> Result<SignParams, ()> {
-        let security_framework = try_to_get_security_framework!();
         let algorithm_id = match data_len {
             20 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA1\0".as_ref(),
             32 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA256\0".as_ref(),
@@ -410,7 +387,7 @@ impl SignParams {
                 return Err(());
             }
         };
-        let algorithm = security_framework.get_sec_string_constant(algorithm_id)?;
+        let algorithm = SECURITY_FRAMEWORK.get_sec_string_constant(algorithm_id)?;
         Ok(SignParams::EC(algorithm))
     }
 
@@ -455,10 +432,7 @@ impl Key {
         };
         let id = Sha256::digest(der.bytes()).to_vec();
 
-        let key = {
-            let security_framework = try_to_get_security_framework!();
-            security_framework.sec_certificate_copy_key(certificate.as_concrete_TypeRef())?
-        };
+        let key = SECURITY_FRAMEWORK.sec_certificate_copy_key(certificate.as_concrete_TypeRef())?;
         if key.is_null() {
             error!("couldn't get key from certificate?");
             return Err(());
@@ -468,17 +442,13 @@ impl Key {
         let key_size_in_bits: CFNumber = get_key_attribute(&key, unsafe { kSecAttrKeySizeInBits })?;
         let mut modulus = None;
         let mut ec_params = None;
-        let sec_attr_key_type_ec = {
-            let security_framework = try_to_get_security_framework!();
-            security_framework
-                .get_sec_string_constant(b"kSecAttrKeyTypeECSECPrimeRandom\0".as_ref())?
-        };
+        let sec_attr_key_type_ec = SECURITY_FRAMEWORK
+            .get_sec_string_constant(b"kSecAttrKeyTypeECSECPrimeRandom\0".as_ref())?;
         let (key_type_enum, key_type_attribute) =
             if key_type.as_concrete_TypeRef() == unsafe { kSecAttrKeyTypeRSA } {
                 // TODO: presumably this is fallible and we should check it before wrapping
                 let public_key = unsafe {
-                    let security_framework = try_to_get_security_framework!();
-                    let result = security_framework.sec_key_copy_external_representation(
+                    let result = SECURITY_FRAMEWORK.sec_key_copy_external_representation(
                         key.as_concrete_TypeRef(),
                         std::ptr::null_mut(),
                     )?;
@@ -634,8 +604,7 @@ impl Key {
         let data = CFData::from_buffer(data);
         let signature = unsafe {
             let mut error = std::ptr::null_mut();
-            let security_framework = try_to_get_security_framework!();
-            let result = security_framework.sec_key_create_signature(
+            let result = SECURITY_FRAMEWORK.sec_key_create_signature(
                 key.as_concrete_TypeRef(),
                 *signing_algorithm,
                 data.as_concrete_TypeRef(),
@@ -705,8 +674,7 @@ pub fn list_objects() -> Vec<Object> {
 fn get_key_attribute<T: TCFType + Clone>(key: &SecKey, attr: CFStringRef) -> Result<T, ()> {
     // TODO: is SecKeyCopyAttributes fallible? will wrap_under_create_rule panic?
     let attributes: CFDictionary<CFString, T> = unsafe {
-        let security_framework = try_to_get_security_framework!();
-        let attributes = security_framework.sec_key_copy_attributes(key.as_concrete_TypeRef())?;
+        let attributes = SECURITY_FRAMEWORK.sec_key_copy_attributes(key.as_concrete_TypeRef())?;
         CFDictionary::wrap_under_create_rule(attributes)
     };
     match attributes.find(attr as *const _) {
