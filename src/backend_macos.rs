@@ -218,6 +218,39 @@ impl SecurityFramework {
     }
 }
 
+fn sec_identity_copy_certificate(identity: &SecIdentity) -> Result<SecCertificate, ()> {
+    let mut certificate = std::ptr::null();
+    let status =
+        unsafe { SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate) };
+    if status != errSecSuccess {
+        error!("SecIdentityCopyCertificate failed: {}", status);
+        return Err(());
+    }
+    if certificate.is_null() {
+        error!("couldn't get certificate from identity?");
+        return Err(());
+    }
+    Ok(unsafe { SecCertificate::wrap_under_create_rule(certificate) })
+}
+
+fn sec_certificate_copy_subject_summary(certificate: &SecCertificate) -> Result<CFString, ()> {
+    let result = unsafe { SecCertificateCopySubjectSummary(certificate.as_concrete_TypeRef()) };
+    if result.is_null() {
+        error!("SecCertificateCopySubjectSummary failed");
+        return Err(());
+    }
+    Ok(unsafe { CFString::wrap_under_create_rule(result) })
+}
+
+fn sec_certificate_copy_data(certificate: &SecCertificate) -> Result<CFData, ()> {
+    let result = unsafe { SecCertificateCopyData(certificate.as_concrete_TypeRef()) };
+    if result.is_null() {
+        error!("SecCertificateCopyData failed");
+        return Err(());
+    }
+    Ok(unsafe { CFData::wrap_under_create_rule(result) })
+}
+
 pub struct Cert {
     class: Vec<u8>,
     token: Vec<u8>,
@@ -231,28 +264,9 @@ pub struct Cert {
 
 impl Cert {
     fn new(identity: &SecIdentity) -> Result<Cert, ()> {
-        let mut certificate = std::ptr::null();
-        let status =
-            unsafe { SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate) };
-        if status != errSecSuccess {
-            error!("SecIdentityCopyCertificate failed: {}", status);
-            return Err(());
-        }
-        if certificate.is_null() {
-            error!("couldn't get certificate from identity?");
-            return Err(());
-        }
-        let certificate = unsafe { SecCertificate::wrap_under_create_rule(certificate) };
-        let label = unsafe {
-            CFString::wrap_under_create_rule(SecCertificateCopySubjectSummary(
-                certificate.as_concrete_TypeRef(),
-            ))
-        };
-        let der = unsafe {
-            CFData::wrap_under_create_rule(SecCertificateCopyData(
-                certificate.as_concrete_TypeRef(),
-            ))
-        };
+        let certificate = sec_identity_copy_certificate(identity)?;
+        let label = sec_certificate_copy_subject_summary(&certificate)?;
+        let der = sec_certificate_copy_data(&certificate)?;
         let id = Sha256::digest(der.bytes()).to_vec();
         let issuer = SECURITY_FRAMEWORK
             .sec_certificate_copy_normalized_issuer_sequence(certificate.as_concrete_TypeRef())?;
