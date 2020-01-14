@@ -350,7 +350,7 @@ const OID_BYTES_SECP521R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23];
 
 #[derive(Clone, Copy, Debug)]
 pub enum KeyType {
-    EC,
+    EC(usize),
     RSA,
 }
 
@@ -366,7 +366,7 @@ impl SignParams {
         params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
     ) -> Result<SignParams, ()> {
         match key_type {
-            KeyType::EC => return SignParams::new_ec_params(data_len),
+            KeyType::EC(_) => return SignParams::new_ec_params(data_len),
             KeyType::RSA => {}
         }
         let pss_params = match params {
@@ -479,16 +479,21 @@ impl Key {
                 // which curve this key is on.
                 // This might not matter in practice, because it seems all NSS uses
                 // this for is to get the signature size.
-                match key_size_in_bits.to_i64() {
-                    Some(256) => ec_params = Some(OID_BYTES_SECP256R1.to_vec()),
-                    Some(384) => ec_params = Some(OID_BYTES_SECP384R1.to_vec()),
-                    Some(521) => ec_params = Some(OID_BYTES_SECP521R1.to_vec()),
+                let key_size_in_bits = match key_size_in_bits.to_i64() {
+                    Some(value) => value,
+                    None => return Err(()),
+                };
+                match key_size_in_bits {
+                    256 => ec_params = Some(OID_BYTES_SECP256R1.to_vec()),
+                    384 => ec_params = Some(OID_BYTES_SECP384R1.to_vec()),
+                    521 => ec_params = Some(OID_BYTES_SECP521R1.to_vec()),
                     _ => {
                         error!("unsupported EC key");
                         return Err(());
                     }
                 }
-                (KeyType::EC, CKK_EC)
+                let coordinate_width = (key_size_in_bits as usize + 7) / 8;
+                (KeyType::EC(coordinate_width), CKK_EC)
             } else {
                 error!("unsupported key type");
                 return Err(());
@@ -624,17 +629,21 @@ impl Key {
             data.as_concrete_TypeRef(),
         )?;
         let signature_value = match self.key_type_enum {
-            KeyType::EC => {
+            KeyType::EC(coordinate_width) => {
                 // We need to convert the DER Ecdsa-Sig-Value to the
                 // concatenation of r and s, the coordinates of the point on
-                // the curve.
+                // the curve. r and s must be 0-padded to be coordinate_width
+                // total bytes.
                 let (r, s) = read_ec_sig_point(signature.bytes())?;
-                // TODO: is there a padding issue here? This should be failing
-                // ~half the time (unless SecKeyCreateSignature isn't actually
-                // using the shortest possible encoding for the DER
-                // INTEGERs...)
-                let mut signature_value = Vec::with_capacity(r.len() + s.len());
+                if r.len() > coordinate_width || s.len() > coordinate_width {
+                    return Err(());
+                }
+                let mut signature_value = Vec::with_capacity(2 * coordinate_width);
+                let r_padding = vec![0; coordinate_width - r.len()];
+                signature_value.extend(r_padding);
                 signature_value.extend_from_slice(r);
+                let s_padding = vec![0; coordinate_width - s.len()];
+                signature_value.extend(s_padding);
                 signature_value.extend_from_slice(s);
                 signature_value
             }
