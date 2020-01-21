@@ -369,10 +369,6 @@ impl Cert {
     }
 }
 
-const OID_BYTES_SECP256R1: &[u8] = &[0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
-const OID_BYTES_SECP384R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x22];
-const OID_BYTES_SECP521R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23];
-
 #[derive(Clone, Copy, Debug)]
 pub enum KeyType {
     EC(usize),
@@ -391,9 +387,30 @@ impl SignParams {
         params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
     ) -> Result<SignParams, ()> {
         match key_type {
-            KeyType::EC(_) => return SignParams::new_ec_params(data_len),
-            KeyType::RSA => {}
+            KeyType::EC(_) => SignParams::new_ec_params(data_len),
+            KeyType::RSA => SignParams::new_rsa_params(params),
         }
+    }
+
+    fn new_ec_params(data_len: usize) -> Result<SignParams, ()> {
+        let algorithm_id = match data_len {
+            20 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA1\0".as_ref(),
+            32 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA256\0".as_ref(),
+            48 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA384\0".as_ref(),
+            64 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA512\0".as_ref(),
+            _ => {
+                error!(
+                    "Unexpected digested signature input length for ECDSA: {}",
+                    data_len
+                );
+                return Err(());
+            }
+        };
+        let algorithm = SECURITY_FRAMEWORK.get_sec_string_constant(algorithm_id)?;
+        Ok(SignParams::EC(algorithm))
+    }
+
+    fn new_rsa_params(params: &Option<CK_RSA_PKCS_PSS_PARAMS>) -> Result<SignParams, ()> {
         let pss_params = match params {
             Some(pss_params) => pss_params,
             None => {
@@ -421,24 +438,6 @@ impl SignParams {
             SECURITY_FRAMEWORK.get_sec_string_constant(algorithm_id)?
         };
         Ok(SignParams::RSA(algorithm))
-    }
-
-    fn new_ec_params(data_len: usize) -> Result<SignParams, ()> {
-        let algorithm_id = match data_len {
-            20 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA1\0".as_ref(),
-            32 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA256\0".as_ref(),
-            48 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA384\0".as_ref(),
-            64 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA512\0".as_ref(),
-            _ => {
-                error!(
-                    "Unexpected digested signature input length for ECDSA: {}",
-                    data_len
-                );
-                return Err(());
-            }
-        };
-        let algorithm = SECURITY_FRAMEWORK.get_sec_string_constant(algorithm_id)?;
-        Ok(SignParams::EC(algorithm))
     }
 
     fn get_algorithm(&self) -> &SecKeyAlgorithm {
@@ -603,8 +602,8 @@ impl Key {
     ) -> Result<usize, ()> {
         // Unfortunately we don't have a way of getting the length of a signature without creating
         // one.
-        let signature = self.sign(data, params)?;
-        Ok(signature.len())
+        let dummy_signature_bytes = self.sign(data, params)?;
+        Ok(dummy_signature_bytes.len())
     }
 
     // The input data is a hash. What algorithm we use depends on the size of the hash.
@@ -710,7 +709,6 @@ fn list_identities() -> Option<Vec<(Cert, Key)>> {
         }
         CFArray::<SecIdentityRef>::wrap_under_create_rule(result as CFArrayRef)
     };
-    debug!("found {} identities", identities.len());
     let mut identities_out = Vec::with_capacity(identities.len() as usize);
     for identity in identities.get_all_values().iter() {
         let identity = unsafe { SecIdentity::wrap_under_get_rule(*identity as SecIdentityRef) };

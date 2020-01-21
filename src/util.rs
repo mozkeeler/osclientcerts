@@ -19,6 +19,14 @@ macro_rules! unsafe_packed_field_access {
     }};
 }
 
+#[cfg(target_os = "macos")]
+pub const OID_BYTES_SECP256R1: &[u8] =
+    &[0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
+#[cfg(target_os = "macos")]
+pub const OID_BYTES_SECP384R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x22];
+#[cfg(target_os = "macos")]
+pub const OID_BYTES_SECP521R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23];
+
 // This is a helper function to take a value and lay it out in memory how
 // PKCS#11 is expecting it.
 pub fn serialize_uint<T: TryInto<u64>>(value: T) -> Result<Vec<u8>, ()> {
