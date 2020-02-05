@@ -48,6 +48,12 @@ lazy_static! {
     static ref SECURITY_FRAMEWORK: SecurityFramework = SecurityFramework::new();
 }
 
+/// This implementation uses security framework functions and constants that
+/// are not provided by the version of the SDK we build with. To work around
+/// this, we attempt to open and dynamically load these functions and symbols
+/// at runtime. Unfortunately this does mean that if a user is not on a new
+/// enough version of macOS, they will not be able to use client certificates
+/// from their keychain in Firefox until they upgrade.
 struct SecurityFramework {
     library: Option<Library>,
 }
@@ -58,6 +64,7 @@ impl SecurityFramework {
         SecurityFramework { library }
     }
 
+    /// SecKeyCreateSignature is available in macOS 10.12
     fn sec_key_create_signature(
         &self,
         key: &SecKey,
@@ -92,6 +99,7 @@ impl SecurityFramework {
         }
     }
 
+    /// SecKeyCopyAttributes is available in macOS 10.12
     fn sec_key_copy_attributes<T>(&self, key: &SecKey) -> Result<CFDictionary<CFString, T>, ()> {
         match &self.library {
             Some(library) => unsafe {
@@ -108,6 +116,7 @@ impl SecurityFramework {
         }
     }
 
+    /// SecKeyCopyExternalRepresentation is available in macOS 10.12
     fn sec_key_copy_external_representation(&self, key: &SecKey) -> Result<CFData, ()> {
         match &self.library {
             Some(library) => unsafe {
@@ -128,6 +137,7 @@ impl SecurityFramework {
         }
     }
 
+    /// SecCertificateCopySerialNumberData is available in macOS 10.13
     fn sec_certificate_copy_serial_number_data(
         &self,
         certificate: &SecCertificate,
@@ -152,6 +162,7 @@ impl SecurityFramework {
         }
     }
 
+    /// SecCertificateCopyNormalizedIssuerSequence is available in macOS 10.12.4
     fn sec_certificate_copy_normalized_issuer_sequence(
         &self,
         certificate: &SecCertificate,
@@ -172,6 +183,7 @@ impl SecurityFramework {
         }
     }
 
+    /// SecCertificateCopyNormalizedSubjectSequence is available in macOS 10.12.4
     fn sec_certificate_copy_normalized_subject_sequence(
         &self,
         certificate: &SecCertificate,
@@ -192,6 +204,7 @@ impl SecurityFramework {
         }
     }
 
+    /// SecCertificateCopyKey is available in macOS 10.14
     fn sec_certificate_copy_key(&self, certificate: &SecCertificate) -> Result<SecKey, ()> {
         match &self.library {
             Some(library) => unsafe {
@@ -394,6 +407,7 @@ impl SignParams {
 
     fn new_ec_params(data_len: usize) -> Result<SignParams, ()> {
         let algorithm_id = match data_len {
+            // These are available in macOS 10.12
             20 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA1\0".as_ref(),
             32 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA256\0".as_ref(),
             48 => b"kSecKeyAlgorithmECDSASignatureDigestX962SHA384\0".as_ref(),
@@ -414,6 +428,7 @@ impl SignParams {
         let pss_params = match params {
             Some(pss_params) => pss_params,
             None => {
+                // This is available in macOS 10.12
                 return Ok(SignParams::RSA(
                     SECURITY_FRAMEWORK.get_sec_string_constant(
                         b"kSecKeyAlgorithmRSASignatureDigestPKCS1v15Raw\0".as_ref(),
@@ -423,6 +438,7 @@ impl SignParams {
         };
         let algorithm = {
             let algorithm_id = match pss_params.hashAlg {
+                // These are available in macOS 10.13
                 CKM_SHA_1 => b"kSecKeyAlgorithmRSASignatureDigestPSSSHA1\0".as_ref(),
                 CKM_SHA256 => b"kSecKeyAlgorithmRSASignatureDigestPSSSHA256\0".as_ref(),
                 CKM_SHA384 => b"kSecKeyAlgorithmRSASignatureDigestPSSSHA384\0".as_ref(),
@@ -470,6 +486,7 @@ impl Key {
         let key_size_in_bits: CFNumber = get_key_attribute(&key, unsafe { kSecAttrKeySizeInBits })?;
         let mut modulus = None;
         let mut ec_params = None;
+        // This is available in macOS 10.12
         let sec_attr_key_type_ec = SECURITY_FRAMEWORK
             .get_sec_string_constant(b"kSecAttrKeyTypeECSECPrimeRandom\0".as_ref())?;
         let (key_type_enum, key_type_attribute) =

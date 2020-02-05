@@ -11,58 +11,35 @@
 
 pub type OSStatus = i32;
 pub const errSecSuccess: OSStatus = 0;
+
+pub type SecKeyAlgorithm = CFStringRef;
+
 extern "C" {
+    // Available starting macOS 10.3
     pub fn SecCertificateGetTypeID() -> CFTypeID;
-}
-extern "C" {
-    pub fn SecCertificateCopyData(certificate: SecCertificateRef) -> CFDataRef;
-}
-extern "C" {
-    pub fn SecCertificateCopySubjectSummary(certificate: SecCertificateRef) -> CFStringRef;
-}
-extern "C" {
     pub fn SecIdentityGetTypeID() -> CFTypeID;
-}
-extern "C" {
     pub fn SecIdentityCopyCertificate(
         identityRef: SecIdentityRef,
         certificateRef: *mut SecCertificateRef,
     ) -> OSStatus;
-}
-extern "C" {
     pub fn SecIdentityCopyPrivateKey(
         identityRef: SecIdentityRef,
         privateKeyRef: *mut SecKeyRef,
     ) -> OSStatus;
-}
-extern "C" {
+    pub fn SecKeyGetTypeID() -> CFTypeID;
+
+    // Available starting macOS 10.6
+    pub fn SecCertificateCopyData(certificate: SecCertificateRef) -> CFDataRef;
+    pub fn SecCertificateCopySubjectSummary(certificate: SecCertificateRef) -> CFStringRef;
+    pub fn SecItemCopyMatching(query: CFDictionaryRef, result: *mut CFTypeRef) -> OSStatus;
     pub static kSecClass: CFStringRef;
-}
-extern "C" {
-    pub static kSecClassIdentity: CFStringRef;
-}
-extern "C" {
     pub static kSecAttrKeyType: CFStringRef;
-}
-extern "C" {
     pub static kSecAttrKeySizeInBits: CFStringRef;
-}
-extern "C" {
+    pub static kSecMatchLimit: CFStringRef;
+    pub static kSecMatchLimitAll: CFStringRef;
+    pub static kSecReturnRef: CFStringRef;
+
+    // Available starting macOS 10.7
+    pub static kSecClassIdentity: CFStringRef;
     pub static kSecAttrKeyTypeRSA: CFStringRef;
 }
-extern "C" {
-    pub static kSecMatchLimit: CFStringRef;
-}
-extern "C" {
-    pub static kSecMatchLimitAll: CFStringRef;
-}
-extern "C" {
-    pub static kSecReturnRef: CFStringRef;
-}
-extern "C" {
-    pub fn SecItemCopyMatching(query: CFDictionaryRef, result: *mut CFTypeRef) -> OSStatus;
-}
-extern "C" {
-    pub fn SecKeyGetTypeID() -> CFTypeID;
-}
-pub type SecKeyAlgorithm = CFStringRef;
