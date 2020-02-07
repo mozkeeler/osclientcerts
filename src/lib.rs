@@ -17,6 +17,9 @@ extern crate libloading;
 #[macro_use]
 extern crate log;
 extern crate pkcs11;
+#[cfg(target_os = "macos")]
+#[macro_use]
+extern crate rental;
 extern crate sha2;
 #[cfg(target_os = "windows")]
 extern crate winapi;
