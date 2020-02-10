@@ -14,6 +14,7 @@ use backend::*;
 
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
+use std::thread::JoinHandle;
 
 /// Helper type for sending `ManagerArguments` to the real `Manager`.
 type ManagerArgumentsSender = Sender<ManagerArguments>;
@@ -82,13 +83,14 @@ macro_rules! manager_proxy_fn_impl {
 pub struct ManagerProxy {
     sender: ManagerArgumentsSender,
     receiver: ManagerReturnValueReceiver,
+    thread_handle: Option<JoinHandle<()>>,
 }
 
 impl ManagerProxy {
     pub fn new() -> ManagerProxy {
         let (proxy_sender, manager_receiver) = channel();
         let (manager_sender, proxy_receiver) = channel();
-        thread::spawn(move || {
+        let thread_handle = thread::spawn(move || {
             let mut real_manager = Manager::new();
             loop {
                 let arguments = match manager_receiver.recv() {
@@ -159,6 +161,7 @@ impl ManagerProxy {
         ManagerProxy {
             sender: proxy_sender,
             receiver: proxy_receiver,
+            thread_handle: Some(thread_handle),
         }
     }
 
@@ -282,7 +285,16 @@ impl ManagerProxy {
     }
 
     pub fn stop(&mut self) -> Result<(), ()> {
-        manager_proxy_fn_impl!(self, ManagerArguments::Stop, ManagerReturnValue::Stop)
+        manager_proxy_fn_impl!(self, ManagerArguments::Stop, ManagerReturnValue::Stop)?;
+        let thread_handle = match self.thread_handle.take() {
+            Some(thread_handle) => thread_handle,
+            None => {
+                error!("stop should only be called once");
+                return Err(());
+            }
+        };
+        thread_handle.join().map_err(|_| ())?;
+        Ok(())
     }
 }
 
