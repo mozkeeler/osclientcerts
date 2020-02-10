@@ -293,7 +293,13 @@ impl ManagerProxy {
                 return Err(());
             }
         };
-        thread_handle.join().map_err(|_| ())?;
+        match thread_handle.join() {
+            Ok(()) => {}
+            Err(e) => {
+                error!("manager thread panicked: {:?}", e);
+                return Err(());
+            }
+        };
         Ok(())
     }
 }
