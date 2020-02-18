@@ -329,7 +329,7 @@ struct Manager {
     next_handle: CK_OBJECT_HANDLE,
     /// The last time the implementation looked for new objects in the backend.
     /// The implementation does this search no more than once every 3 seconds.
-    last_scan_time: Instant,
+    last_scan_time: Option<Instant>,
 }
 
 impl Manager {
@@ -343,9 +343,9 @@ impl Manager {
             key_ids: BTreeSet::new(),
             next_session: 1,
             next_handle: 1,
-            last_scan_time: Instant::now(),
+            last_scan_time: None,
         };
-        manager.find_new_objects();
+        manager.maybe_find_new_objects();
         manager
     }
 
@@ -353,7 +353,17 @@ impl Manager {
     /// seconds have elapsed since the last session was opened), this searches for certificates and
     /// keys to expose. We de-duplicate previously-found certificates and keys by / keeping track of
     /// their IDs.
-    fn find_new_objects(&mut self) {
+    fn maybe_find_new_objects(&mut self) {
+        let now = Instant::now();
+        match self.last_scan_time {
+            Some(last_scan_time) => {
+                if now.duration_since(last_scan_time) < Duration::new(3, 0) {
+                    return;
+                }
+            }
+            None => {}
+        }
+        self.last_scan_time = Some(now);
         let objects = list_objects();
         debug!("found {} objects", objects.len());
         for object in objects {
@@ -379,11 +389,7 @@ impl Manager {
     }
 
     pub fn open_session(&mut self) -> Result<CK_SESSION_HANDLE, ()> {
-        let now = Instant::now();
-        if now.duration_since(self.last_scan_time) > Duration::new(3, 0) {
-            self.find_new_objects();
-            self.last_scan_time = now;
-        }
+        self.maybe_find_new_objects();
         let next_session = self.next_session;
         self.next_session += 1;
         self.sessions.insert(next_session);
