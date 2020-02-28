@@ -927,15 +927,18 @@ pub const SUPPORTED_ATTRIBUTES: &[CK_ATTRIBUTE_TYPE] = &[
     CKA_EC_PARAMS,
 ];
 
-pub fn list_objects() -> Vec<Object> {
+pub fn list_objects() -> Result<Vec<Object>, TracingError> {
     let mut objects = Vec::new();
-    if let Some(identities) = list_identities() {
-        for (cert, key) in identities {
-            objects.push(Object::Cert(cert));
-            objects.push(Object::Key(key));
+    match list_identities() {
+        Ok(identities) => {
+            for (cert, key) in identities {
+                objects.push(Object::Cert(cert));
+                objects.push(Object::Key(key));
+            }
+            Ok(objects)
         }
+        Err(e) => Err(trace_error_stack!(e)),
     }
-    objects
 }
 
 fn get_key_attribute<T: TCFType + Clone>(
@@ -962,7 +965,7 @@ fn get_key_attribute<T: TCFType + Clone>(
     }
 }
 
-fn list_identities() -> Option<Vec<(Cert, Key)>> {
+fn list_identities() -> Result<Vec<(Cert, Key)>, TracingError> {
     let identities = unsafe {
         let class_key = CFString::wrap_under_get_rule(kSecClass);
         let class_value = CFString::wrap_under_get_rule(kSecClassIdentity);
@@ -979,23 +982,32 @@ fn list_identities() -> Option<Vec<(Cert, Key)>> {
         let mut result = std::ptr::null();
         let status = SecItemCopyMatching(dict.as_CFTypeRef() as CFDictionaryRef, &mut result);
         if status != errSecSuccess {
-            error!("SecItemCopyMatching failed: {}", status);
-            return None;
+            return Err(trace_error!(format!("SecItemCopyMatching failed: {}", status)));
         }
         if result.is_null() {
-            debug!("no client certs?");
-            return None;
+            info!("SecItemCopyMatching returned null result");
+            return Ok(Vec::new());
         }
         CFArray::<SecIdentityRef>::wrap_under_create_rule(result as CFArrayRef)
     };
     let mut identities_out = Vec::with_capacity(identities.len() as usize);
     for identity in identities.get_all_values().iter() {
         let identity = unsafe { SecIdentity::wrap_under_get_rule(*identity as SecIdentityRef) };
-        let cert = Cert::new(&identity);
-        let key = Key::new(&identity);
-        if let (Ok(cert), Ok(key)) = (cert, key) {
-            identities_out.push((cert, key));
-        }
+        let cert = match Cert::new(&identity) {
+            Ok(cert) => cert,
+            Err(e) => {
+                error!("Cert::new failed: {}", e);
+                continue;
+            }
+        };
+        let key = match Key::new(&identity) {
+            Ok(key) => key,
+            Err(e) => {
+                error!("Key::new failed: {}", e);
+                continue;
+            }
+        };
+        identities_out.push((cert, key));
     }
-    Some(identities_out)
+    Ok(identities_out)
 }

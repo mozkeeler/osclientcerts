@@ -364,7 +364,13 @@ impl Manager {
             None => {}
         }
         self.last_scan_time = Some(now);
-        let objects = list_objects();
+        let objects = match list_objects() {
+            Ok(objects) => objects,
+            Err(e) => {
+                error!("list_objects failed: {}", e);
+                return;
+            }
+        };
         debug!("found {} objects", objects.len());
         for object in objects {
             match &object {
@@ -537,7 +543,13 @@ impl Manager {
             Some(Object::Key(key)) => key,
             _ => return Err(()),
         };
-        key.get_signature_length(data, params).map_err(|_| ())
+        match key.get_signature_length(data, params) {
+            Ok(signature_length) => Ok(signature_length),
+            Err(e) => {
+                error!("get_signature_length failed: {}", e);
+                Err(())
+            }
+        }
     }
 
     pub fn sign(&mut self, session: CK_SESSION_HANDLE, data: &[u8]) -> Result<Vec<u8>, ()> {
