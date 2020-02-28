@@ -537,7 +537,7 @@ impl Manager {
             Some(Object::Key(key)) => key,
             _ => return Err(()),
         };
-        key.get_signature_length(data, params)
+        key.get_signature_length(data, params).map_err(|_| ())
     }
 
     pub fn sign(&mut self, session: CK_SESSION_HANDLE, data: &[u8]) -> Result<Vec<u8>, ()> {
@@ -551,6 +551,12 @@ impl Manager {
             Some(Object::Key(key)) => key,
             _ => return Err(()),
         };
-        key.sign(data, &params)
+        match key.sign(data, &params) {
+            Ok(signature) => Ok(signature),
+            Err(e) => {
+                error!("sign failed: {}", e);
+                Err(())
+            }
+        }
     }
 }

@@ -5,6 +5,7 @@
 
 use byteorder::{BigEndian, NativeEndian, ReadBytesExt, WriteBytesExt};
 use std::convert::TryInto;
+use std::fmt;
 
 /// Accessing fields of packed structs is unsafe (it may be undefined behavior if the field isn't
 /// aligned). Since we're implementing a PKCS#11 module, we already have to trust the caller not to
@@ -27,15 +28,63 @@ pub const OID_BYTES_SECP384R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x2
 #[cfg(target_os = "macos")]
 pub const OID_BYTES_SECP521R1: &[u8] = &[0x06, 0x05, 0x2b, 0x81, 0x04, 0x00, 0x23];
 
+pub enum TracingErrorType {
+    Base(String),
+    Stack(Box<TracingError>),
+}
+
+pub struct TracingError {
+    location: String,
+    next: TracingErrorType,
+}
+
+impl TracingError {
+    pub fn new(location: String, next: TracingErrorType) -> TracingError {
+        TracingError { location, next }
+    }
+}
+
+impl fmt::Display for TracingError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.location)?;
+        match &self.next {
+            TracingErrorType::Base(msg) => write!(f, ": {}", msg),
+            TracingErrorType::Stack(next) => write!(f, ": {}", next),
+        }
+    }
+}
+
+macro_rules! trace_error_stack {
+    ($next:ident) => {
+        TracingError::new(
+            format!("{}:{}", file!(), line!()),
+            TracingErrorType::Stack(Box::new($next)),
+        )
+    };
+}
+
+macro_rules! trace_error {
+    ($msg:expr) => {
+        TracingError::new(
+            format!("{}:{}", file!(), line!()),
+            TracingErrorType::Base($msg),
+        )
+    };
+}
+
 // This is a helper function to take a value and lay it out in memory how
 // PKCS#11 is expecting it.
-pub fn serialize_uint<T: TryInto<u64>>(value: T) -> Result<Vec<u8>, ()> {
+pub fn serialize_uint<T: TryInto<u64> + fmt::Display + Copy>(
+    value: T,
+) -> Result<Vec<u8>, TracingError> {
     let value_size = std::mem::size_of::<T>();
     let mut value_buf = Vec::with_capacity(value_size);
-    let value_as_u64 = value.try_into().map_err(|_| ())?;
+    let value_as_u64 = value
+        .try_into()
+        .map_err(|_| trace_error!(format!("couldn't convert {} to u64", value)))?;
     value_buf
         .write_uint::<NativeEndian>(value_as_u64, value_size)
-        .map_err(|_| ())?;
+        .map_err(|e| trace_error!(e.to_string()))?;
     Ok(value_buf)
 }
 

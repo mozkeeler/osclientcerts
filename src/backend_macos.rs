@@ -58,7 +58,7 @@ type SecCertificateCopyNormalizedSubjectSequenceType =
     unsafe extern "C" fn(SecCertificateRef) -> CFDataRef;
 type SecCertificateCopyKeyType = unsafe extern "C" fn(SecCertificateRef) -> SecKeyRef;
 
-#[derive(Ord, Eq, PartialOrd, PartialEq)]
+#[derive(Ord, Eq, PartialOrd, PartialEq, Debug)]
 enum SecStringConstant {
     // These are available in macOS 10.12
     SecKeyAlgorithmECDSASignatureDigestX962SHA1,
@@ -117,38 +117,64 @@ impl SecurityFramework {
             Ok(library) => library,
             Err(_) => return SecurityFramework { rental: None },
         };
-        match rent_libloading::RentedSecurityFramework::try_new::<_, ()>(
+        match rent_libloading::RentedSecurityFramework::try_new::<_, TracingError>(
             Box::new(library),
             |library| unsafe {
                 let sec_key_create_signature = library
                     .get::<SecKeyCreateSignatureType>(b"SecKeyCreateSignature\0")
-                    .map_err(|_| ())?;
+                    .map_err(|e| {
+                        trace_error!(format!("couldn't load SecKeyCreateSignature: {}", e))
+                    })?;
                 let sec_key_copy_attributes = library
                     .get::<SecKeyCopyAttributesType>(b"SecKeyCopyAttributes\0")
-                    .map_err(|_| ())?;
+                    .map_err(|e| {
+                        trace_error!(format!("couldn't load SecKeyCopyAttributes: {}", e))
+                    })?;
                 let sec_key_copy_external_representation = library
                     .get::<SecKeyCopyExternalRepresentationType>(
                         b"SecKeyCopyExternalRepresentation\0",
                     )
-                    .map_err(|_| ())?;
+                    .map_err(|e| {
+                        trace_error!(format!(
+                            "couldn't load SecKeyCopyExternalRepresentation: {}",
+                            e
+                        ))
+                    })?;
                 let sec_certificate_copy_serial_number_data = library
                     .get::<SecCertificateCopySerialNumberDataType>(
                         b"SecCertificateCopySerialNumberData\0",
                     )
-                    .map_err(|_| ())?;
+                    .map_err(|e| {
+                        trace_error!(format!(
+                            "couldn't load SecCertificateCopySerialNumberData: {}",
+                            e
+                        ))
+                    })?;
                 let sec_certificate_copy_normalized_issuer_sequence = library
                     .get::<SecCertificateCopyNormalizedIssuerSequenceType>(
                         b"SecCertificateCopyNormalizedIssuerSequence\0",
                     )
-                    .map_err(|_| ())?;
+                    .map_err(|e| {
+                        trace_error!(format!(
+                            "couldn't load SecCertificateCopyNormalizedIssuerSequence: {}",
+                            e
+                        ))
+                    })?;
                 let sec_certificate_copy_normalized_subject_sequence = library
                     .get::<SecCertificateCopyNormalizedSubjectSequenceType>(
                         b"SecCertificateCopyNormalizedSubjectSequence\0",
                     )
-                    .map_err(|_| ())?;
+                    .map_err(|e| {
+                        trace_error!(format!(
+                            "couldn't load SecCertificateCopyNormalizedSubjectSequence: {}",
+                            e
+                        ))
+                    })?;
                 let sec_certificate_copy_key = library
                     .get::<SecCertificateCopyKeyType>(b"SecCertificateCopyKey\0")
-                    .map_err(|_| ())?;
+                    .map_err(|e| {
+                        trace_error!(format!("couldn't load SecCertificateCopyKey: {}", e))
+                    })?;
                 let mut sec_string_constants = BTreeMap::new();
                 let strings_to_load = vec![
                     (
@@ -193,9 +219,15 @@ impl SecurityFramework {
                     ),
                 ];
                 for (symbol_name, sec_string_constant) in strings_to_load {
-                    let cfstring_symbol = library
-                        .get::<*const CFStringRef>(symbol_name)
-                        .map_err(|_| ())?;
+                    let cfstring_symbol =
+                        library
+                            .get::<*const CFStringRef>(symbol_name)
+                            .map_err(|e| {
+                                trace_error!(format!(
+                                    "couldn't load {:?}: {}",
+                                    sec_string_constant, e
+                                ))
+                            })?;
                     let cfstring = CFString::wrap_under_create_rule(**cfstring_symbol);
                     sec_string_constants.insert(sec_string_constant, cfstring.to_string());
                 }
@@ -214,7 +246,10 @@ impl SecurityFramework {
             Ok(rental) => SecurityFramework {
                 rental: Some(rental),
             },
-            Err(_) => SecurityFramework { rental: None },
+            Err(e) => {
+                error!("loading security framework failed: {}", e.0);
+                SecurityFramework { rental: None }
+            }
         }
     }
 
@@ -224,7 +259,7 @@ impl SecurityFramework {
         key: &SecKey,
         algorithm: SecKeyAlgorithm,
         data_to_sign: &CFData,
-    ) -> Result<CFData, ()> {
+    ) -> Result<CFData, TracingError> {
         match &self.rental {
             Some(rental) => rental.rent(|framework| unsafe {
                 let mut error = std::ptr::null_mut();
@@ -236,32 +271,36 @@ impl SecurityFramework {
                 );
                 if result.is_null() {
                     let error = CFError::wrap_under_create_rule(error);
-                    error!("SecKeyCreateSignature failed: {}", error);
-                    return Err(());
+                    return Err(trace_error!(format!(
+                        "SecKeyCreateSignature failed: {}",
+                        error
+                    )));
                 }
                 Ok(CFData::wrap_under_create_rule(result))
             }),
-            None => Err(()),
+            None => Err(trace_error!("security framework not loaded?".to_string())),
         }
     }
 
     /// SecKeyCopyAttributes is available in macOS 10.12
-    fn sec_key_copy_attributes<T>(&self, key: &SecKey) -> Result<CFDictionary<CFString, T>, ()> {
+    fn sec_key_copy_attributes<T>(
+        &self,
+        key: &SecKey,
+    ) -> Result<CFDictionary<CFString, T>, TracingError> {
         match &self.rental {
             Some(rental) => rental.rent(|framework| unsafe {
                 let result = (framework.sec_key_copy_attributes)(key.as_concrete_TypeRef());
                 if result.is_null() {
-                    error!("SecKeyCopyAttributes failed");
-                    return Err(());
+                    return Err(trace_error!("SecKeyCopyAttributes failed".to_string()));
                 }
                 Ok(CFDictionary::wrap_under_create_rule(result))
             }),
-            None => Err(()),
+            None => Err(trace_error!("security framework not loaded?".to_string())),
         }
     }
 
     /// SecKeyCopyExternalRepresentation is available in macOS 10.12
-    fn sec_key_copy_external_representation(&self, key: &SecKey) -> Result<CFData, ()> {
+    fn sec_key_copy_external_representation(&self, key: &SecKey) -> Result<CFData, TracingError> {
         match &self.rental {
             Some(rental) => rental.rent(|framework| unsafe {
                 let mut error = std::ptr::null_mut();
@@ -271,12 +310,14 @@ impl SecurityFramework {
                 );
                 if result.is_null() {
                     let error = CFError::wrap_under_create_rule(error);
-                    error!("SecKeyCopyExternalRepresentation failed: {}", error);
-                    return Err(());
+                    return Err(trace_error!(format!(
+                        "SecKeyCopyExternalRepresentation failed: {}",
+                        error
+                    )));
                 }
                 Ok(CFData::wrap_under_create_rule(result))
             }),
-            None => Err(()),
+            None => Err(trace_error!("security framework not loaded?".to_string())),
         }
     }
 
@@ -284,7 +325,7 @@ impl SecurityFramework {
     fn sec_certificate_copy_serial_number_data(
         &self,
         certificate: &SecCertificate,
-    ) -> Result<CFData, ()> {
+    ) -> Result<CFData, TracingError> {
         match &self.rental {
             Some(rental) => rental.rent(|framework| unsafe {
                 let mut error = std::ptr::null_mut();
@@ -294,12 +335,14 @@ impl SecurityFramework {
                 );
                 if result.is_null() {
                     let error = CFError::wrap_under_create_rule(error);
-                    error!("SecCertificateCopySerialNumberData failed: {}", error);
-                    return Err(());
+                    return Err(trace_error!(format!(
+                        "SecCertificateCopySerialNumberData failed: {}",
+                        error
+                    )));
                 }
                 Ok(CFData::wrap_under_create_rule(result))
             }),
-            None => Err(()),
+            None => Err(trace_error!("security framework not loaded?".to_string())),
         }
     }
 
@@ -307,19 +350,20 @@ impl SecurityFramework {
     fn sec_certificate_copy_normalized_issuer_sequence(
         &self,
         certificate: &SecCertificate,
-    ) -> Result<CFData, ()> {
+    ) -> Result<CFData, TracingError> {
         match &self.rental {
             Some(rental) => rental.rent(|framework| unsafe {
                 let result = (framework.sec_certificate_copy_normalized_issuer_sequence)(
                     certificate.as_concrete_TypeRef(),
                 );
                 if result.is_null() {
-                    error!("SecCertificateCopyNormalizedIssuerSequence failed");
-                    return Err(());
+                    return Err(trace_error!(
+                        "SecCertificateCopyNormalizedIssuerSequence failed".to_string()
+                    ));
                 }
                 Ok(CFData::wrap_under_create_rule(result))
             }),
-            None => Err(()),
+            None => Err(trace_error!("security framework not loaded?".to_string())),
         }
     }
 
@@ -327,50 +371,56 @@ impl SecurityFramework {
     fn sec_certificate_copy_normalized_subject_sequence(
         &self,
         certificate: &SecCertificate,
-    ) -> Result<CFData, ()> {
+    ) -> Result<CFData, TracingError> {
         match &self.rental {
             Some(rental) => rental.rent(|framework| unsafe {
                 let result = (framework.sec_certificate_copy_normalized_subject_sequence)(
                     certificate.as_concrete_TypeRef(),
                 );
                 if result.is_null() {
-                    error!("SecCertificateCopyNormalizedSubjectSequence failed");
-                    return Err(());
+                    return Err(trace_error!(
+                        "SecCertificateCopyNormalizedSubjectSequence failed".to_string()
+                    ));
                 }
                 Ok(CFData::wrap_under_create_rule(result))
             }),
-            None => Err(()),
+            None => Err(trace_error!("security framework not loaded?".to_string())),
         }
     }
 
     /// SecCertificateCopyKey is available in macOS 10.14
-    fn sec_certificate_copy_key(&self, certificate: &SecCertificate) -> Result<SecKey, ()> {
+    fn sec_certificate_copy_key(
+        &self,
+        certificate: &SecCertificate,
+    ) -> Result<SecKey, TracingError> {
         match &self.rental {
             Some(rental) => rental.rent(|framework| unsafe {
                 let result =
                     (framework.sec_certificate_copy_key)(certificate.as_concrete_TypeRef());
                 if result.is_null() {
-                    error!("SecCertificateCopyKey failed");
-                    return Err(());
+                    return Err(trace_error!("SecCertificateCopyKey failed".to_string()));
                 }
                 Ok(SecKey::wrap_under_create_rule(result))
             }),
-            None => Err(()),
+            None => Err(trace_error!("security framework not loaded?".to_string())),
         }
     }
 
     fn get_sec_string_constant(
         &self,
         sec_string_constant: SecStringConstant,
-    ) -> Result<CFString, ()> {
+    ) -> Result<CFString, TracingError> {
         match &self.rental {
             Some(rental) => rental.rent(|framework| {
                 match framework.sec_string_constants.get(&sec_string_constant) {
                     Some(string) => Ok(CFString::new(string)),
-                    None => Err(()),
+                    None => Err(trace_error!(format!(
+                        "string constant '{:?}' not present?",
+                        sec_string_constant
+                    ))),
                 }
             }),
-            None => Err(()),
+            None => Err(trace_error!("security framework not loaded?".to_string())),
         }
     }
 }
@@ -379,49 +429,57 @@ lazy_static! {
     static ref SECURITY_FRAMEWORK: SecurityFramework = SecurityFramework::new();
 }
 
-fn sec_identity_copy_certificate(identity: &SecIdentity) -> Result<SecCertificate, ()> {
+fn sec_identity_copy_certificate(identity: &SecIdentity) -> Result<SecCertificate, TracingError> {
     let mut certificate = std::ptr::null();
     let status =
         unsafe { SecIdentityCopyCertificate(identity.as_concrete_TypeRef(), &mut certificate) };
     if status != errSecSuccess {
-        error!("SecIdentityCopyCertificate failed: {}", status);
-        return Err(());
+        return Err(trace_error!(format!(
+            "SecIdentityCopyCertificate failed: {}",
+            status
+        )));
     }
     if certificate.is_null() {
-        error!("couldn't get certificate from identity?");
-        return Err(());
+        return Err(trace_error!(
+            "couldn't get certificate from identity?".to_string()
+        ));
     }
     Ok(unsafe { SecCertificate::wrap_under_create_rule(certificate) })
 }
 
-fn sec_certificate_copy_subject_summary(certificate: &SecCertificate) -> Result<CFString, ()> {
+fn sec_certificate_copy_subject_summary(
+    certificate: &SecCertificate,
+) -> Result<CFString, TracingError> {
     let result = unsafe { SecCertificateCopySubjectSummary(certificate.as_concrete_TypeRef()) };
     if result.is_null() {
-        error!("SecCertificateCopySubjectSummary failed");
-        return Err(());
+        return Err(trace_error!(
+            "SecCertificateCopySubjectSummary failed".to_string()
+        ));
     }
     Ok(unsafe { CFString::wrap_under_create_rule(result) })
 }
 
-fn sec_certificate_copy_data(certificate: &SecCertificate) -> Result<CFData, ()> {
+fn sec_certificate_copy_data(certificate: &SecCertificate) -> Result<CFData, TracingError> {
     let result = unsafe { SecCertificateCopyData(certificate.as_concrete_TypeRef()) };
     if result.is_null() {
-        error!("SecCertificateCopyData failed");
-        return Err(());
+        return Err(trace_error!("SecCertificateCopyData failed".to_string()));
     }
     Ok(unsafe { CFData::wrap_under_create_rule(result) })
 }
 
-fn sec_identity_copy_private_key(identity: &SecIdentity) -> Result<SecKey, ()> {
+fn sec_identity_copy_private_key(identity: &SecIdentity) -> Result<SecKey, TracingError> {
     let mut key = std::ptr::null();
     let status = unsafe { SecIdentityCopyPrivateKey(identity.as_concrete_TypeRef(), &mut key) };
     if status != errSecSuccess {
-        error!("SecIdentityCopyPrivateKey failed: {}", status);
-        return Err(());
+        return Err(trace_error!(format!(
+            "SecIdentityCopyPrivateKey failed: {}",
+            status
+        )));
     }
     if key.is_null() {
-        error!("SecIdentityCopyPrivateKey didn't set key?");
-        return Err(());
+        return Err(trace_error!(format!(
+            "SecIdentityCopyPrivateKey didn't set key?"
+        )));
     }
     Ok(unsafe { SecKey::wrap_under_create_rule(key) })
 }
@@ -438,20 +496,25 @@ pub struct Cert {
 }
 
 impl Cert {
-    fn new(identity: &SecIdentity) -> Result<Cert, ()> {
-        let certificate = sec_identity_copy_certificate(identity)?;
-        let label = sec_certificate_copy_subject_summary(&certificate)?;
-        let der = sec_certificate_copy_data(&certificate)?;
+    fn new(identity: &SecIdentity) -> Result<Cert, TracingError> {
+        let certificate =
+            sec_identity_copy_certificate(identity).map_err(|e| trace_error_stack!(e))?;
+        let label = sec_certificate_copy_subject_summary(&certificate)
+            .map_err(|e| trace_error_stack!(e))?;
+        let der = sec_certificate_copy_data(&certificate).map_err(|e| trace_error_stack!(e))?;
         let id = Sha256::digest(der.bytes()).to_vec();
-        let issuer =
-            SECURITY_FRAMEWORK.sec_certificate_copy_normalized_issuer_sequence(&certificate)?;
-        let serial_number =
-            SECURITY_FRAMEWORK.sec_certificate_copy_serial_number_data(&certificate)?;
-        let subject =
-            SECURITY_FRAMEWORK.sec_certificate_copy_normalized_subject_sequence(&certificate)?;
+        let issuer = SECURITY_FRAMEWORK
+            .sec_certificate_copy_normalized_issuer_sequence(&certificate)
+            .map_err(|e| trace_error_stack!(e))?;
+        let serial_number = SECURITY_FRAMEWORK
+            .sec_certificate_copy_serial_number_data(&certificate)
+            .map_err(|e| trace_error_stack!(e))?;
+        let subject = SECURITY_FRAMEWORK
+            .sec_certificate_copy_normalized_subject_sequence(&certificate)
+            .map_err(|e| trace_error_stack!(e))?;
         Ok(Cert {
-            class: serialize_uint(CKO_CERTIFICATE)?,
-            token: serialize_uint(CK_TRUE)?,
+            class: serialize_uint(CKO_CERTIFICATE).map_err(|e| trace_error_stack!(e))?,
+            token: serialize_uint(CK_TRUE).map_err(|e| trace_error_stack!(e))?,
             id,
             label: label.to_string().into_bytes(),
             value: der.bytes().to_vec(),
@@ -545,39 +608,42 @@ impl SignParams {
         key_type: KeyType,
         data_len: usize,
         params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
-    ) -> Result<SignParams, ()> {
+    ) -> Result<SignParams, TracingError> {
         match key_type {
             KeyType::EC(_) => SignParams::new_ec_params(data_len),
             KeyType::RSA => SignParams::new_rsa_params(params),
         }
     }
 
-    fn new_ec_params(data_len: usize) -> Result<SignParams, ()> {
+    fn new_ec_params(data_len: usize) -> Result<SignParams, TracingError> {
         let algorithm_id = match data_len {
             20 => SecStringConstant::SecKeyAlgorithmECDSASignatureDigestX962SHA1,
             32 => SecStringConstant::SecKeyAlgorithmECDSASignatureDigestX962SHA256,
             48 => SecStringConstant::SecKeyAlgorithmECDSASignatureDigestX962SHA384,
             64 => SecStringConstant::SecKeyAlgorithmECDSASignatureDigestX962SHA512,
             _ => {
-                error!(
+                return Err(trace_error!(format!(
                     "Unexpected digested signature input length for ECDSA: {}",
                     data_len
-                );
-                return Err(());
+                )));
             }
         };
-        let algorithm = SECURITY_FRAMEWORK.get_sec_string_constant(algorithm_id)?;
+        let algorithm = SECURITY_FRAMEWORK
+            .get_sec_string_constant(algorithm_id)
+            .map_err(|e| trace_error_stack!(e))?;
         Ok(SignParams::EC(algorithm))
     }
 
-    fn new_rsa_params(params: &Option<CK_RSA_PKCS_PSS_PARAMS>) -> Result<SignParams, ()> {
+    fn new_rsa_params(params: &Option<CK_RSA_PKCS_PSS_PARAMS>) -> Result<SignParams, TracingError> {
         let pss_params = match params {
             Some(pss_params) => pss_params,
             None => {
                 return Ok(SignParams::RSA(
-                    SECURITY_FRAMEWORK.get_sec_string_constant(
-                        SecStringConstant::SecKeyAlgorithmRSASignatureDigestPKCS1v15Raw,
-                    )?,
+                    SECURITY_FRAMEWORK
+                        .get_sec_string_constant(
+                            SecStringConstant::SecKeyAlgorithmRSASignatureDigestPKCS1v15Raw,
+                        )
+                        .map_err(|e| trace_error_stack!(e))?,
                 ));
             }
         };
@@ -588,14 +654,15 @@ impl SignParams {
                 CKM_SHA384 => SecStringConstant::SecKeyAlgorithmRSASignatureDigestPSSSHA384,
                 CKM_SHA512 => SecStringConstant::SecKeyAlgorithmRSASignatureDigestPSSSHA512,
                 _ => {
-                    error!(
+                    return Err(trace_error!(format!(
                         "unsupported algorithm to use with RSA-PSS: {}",
                         unsafe_packed_field_access!(pss_params.hashAlg)
-                    );
-                    return Err(());
+                    )));
                 }
             };
-            SECURITY_FRAMEWORK.get_sec_string_constant(algorithm_id)?
+            SECURITY_FRAMEWORK
+                .get_sec_string_constant(algorithm_id)
+                .map_err(|e| trace_error_stack!(e))?
         };
         Ok(SignParams::RSA(algorithm))
     }
@@ -621,21 +688,30 @@ pub struct Key {
 }
 
 impl Key {
-    fn new(identity: &SecIdentity) -> Result<Key, ()> {
-        let certificate = sec_identity_copy_certificate(identity)?;
-        let der = sec_certificate_copy_data(&certificate)?;
+    fn new(identity: &SecIdentity) -> Result<Key, TracingError> {
+        let certificate =
+            sec_identity_copy_certificate(identity).map_err(|e| trace_error_stack!(e))?;
+        let der = sec_certificate_copy_data(&certificate).map_err(|e| trace_error_stack!(e))?;
         let id = Sha256::digest(der.bytes()).to_vec();
-        let key = SECURITY_FRAMEWORK.sec_certificate_copy_key(&certificate)?;
-        let key_type: CFString = get_key_attribute(&key, unsafe { kSecAttrKeyType })?;
-        let key_size_in_bits: CFNumber = get_key_attribute(&key, unsafe { kSecAttrKeySizeInBits })?;
+        let key = SECURITY_FRAMEWORK
+            .sec_certificate_copy_key(&certificate)
+            .map_err(|e| trace_error_stack!(e))?;
+        let key_type: CFString = get_key_attribute(&key, unsafe { kSecAttrKeyType })
+            .map_err(|e| trace_error_stack!(e))?;
+        let key_size_in_bits: CFNumber = get_key_attribute(&key, unsafe { kSecAttrKeySizeInBits })
+            .map_err(|e| trace_error_stack!(e))?;
         let mut modulus = None;
         let mut ec_params = None;
         let sec_attr_key_type_ec = SECURITY_FRAMEWORK
-            .get_sec_string_constant(SecStringConstant::SecAttrKeyTypeECSECPrimeRandom)?;
+            .get_sec_string_constant(SecStringConstant::SecAttrKeyTypeECSECPrimeRandom)
+            .map_err(|e| trace_error_stack!(e))?;
         let (key_type_enum, key_type_attribute) =
             if key_type.as_concrete_TypeRef() == unsafe { kSecAttrKeyTypeRSA } {
-                let public_key = SECURITY_FRAMEWORK.sec_key_copy_external_representation(&key)?;
-                let modulus_value = read_rsa_modulus(public_key.bytes())?;
+                let public_key = SECURITY_FRAMEWORK
+                    .sec_key_copy_external_representation(&key)
+                    .map_err(|e| trace_error_stack!(e))?;
+                let modulus_value = read_rsa_modulus(public_key.bytes())
+                    .map_err(|_| trace_error!("couldn't decode modulus".to_string()))?;
                 modulus = Some(modulus_value);
                 (KeyType::RSA, CKK_RSA)
             } else if key_type == sec_attr_key_type_ec {
@@ -646,31 +722,29 @@ impl Key {
                 // this for is to get the signature size.
                 let key_size_in_bits = match key_size_in_bits.to_i64() {
                     Some(value) => value,
-                    None => return Err(()),
+                    None => return Err(trace_error!("key_size_in_bits not i64?".to_string())),
                 };
                 match key_size_in_bits {
                     256 => ec_params = Some(OID_BYTES_SECP256R1.to_vec()),
                     384 => ec_params = Some(OID_BYTES_SECP384R1.to_vec()),
                     521 => ec_params = Some(OID_BYTES_SECP521R1.to_vec()),
                     _ => {
-                        error!("unsupported EC key");
-                        return Err(());
+                        return Err(trace_error!("unsupported EC key".to_string()));
                     }
                 }
                 let coordinate_width = (key_size_in_bits as usize + 7) / 8;
                 (KeyType::EC(coordinate_width), CKK_EC)
             } else {
-                error!("unsupported key type");
-                return Err(());
+                return Err(trace_error!("unsupported key type".to_string()));
             };
 
         Ok(Key {
             identity: identity.clone(),
-            class: serialize_uint(CKO_PRIVATE_KEY)?,
-            token: serialize_uint(CK_TRUE)?,
+            class: serialize_uint(CKO_PRIVATE_KEY).map_err(|e| trace_error_stack!(e))?,
+            token: serialize_uint(CK_TRUE).map_err(|e| trace_error_stack!(e))?,
             id,
-            private: serialize_uint(CK_TRUE)?,
-            key_type: serialize_uint(key_type_attribute)?,
+            private: serialize_uint(CK_TRUE).map_err(|e| trace_error_stack!(e))?,
+            key_type: serialize_uint(key_type_attribute).map_err(|e| trace_error_stack!(e))?,
             modulus,
             ec_params,
             key_type_enum,
@@ -759,10 +833,10 @@ impl Key {
         &self,
         data: &[u8],
         params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
-    ) -> Result<usize, ()> {
+    ) -> Result<usize, TracingError> {
         // Unfortunately we don't have a way of getting the length of a signature without creating
         // one.
-        let dummy_signature_bytes = self.sign(data, params)?;
+        let dummy_signature_bytes = self.sign(data, params).map_err(|e| trace_error_stack!(e))?;
         Ok(dummy_signature_bytes.len())
     }
 
@@ -771,22 +845,36 @@ impl Key {
         &self,
         data: &[u8],
         params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
-    ) -> Result<Vec<u8>, ()> {
-        let key = sec_identity_copy_private_key(&self.identity)?;
-        let sign_params = SignParams::new(self.key_type_enum, data.len(), params)?;
+    ) -> Result<Vec<u8>, TracingError> {
+        let key =
+            sec_identity_copy_private_key(&self.identity).map_err(|e| trace_error_stack!(e))?;
+        let sign_params = SignParams::new(self.key_type_enum, data.len(), params)
+            .map_err(|e| trace_error_stack!(e))?;
         let signing_algorithm = sign_params.get_algorithm();
         let data = CFData::from_buffer(data);
-        let signature =
-            SECURITY_FRAMEWORK.sec_key_create_signature(&key, signing_algorithm, &data)?;
+        let signature = SECURITY_FRAMEWORK
+            .sec_key_create_signature(&key, signing_algorithm, &data)
+            .map_err(|e| trace_error_stack!(e))?;
         let signature_value = match self.key_type_enum {
             KeyType::EC(coordinate_width) => {
                 // We need to convert the DER Ecdsa-Sig-Value to the
                 // concatenation of r and s, the coordinates of the point on
                 // the curve. r and s must be 0-padded to be coordinate_width
                 // total bytes.
-                let (r, s) = read_ec_sig_point(signature.bytes())?;
+                let (r, s) = match read_ec_sig_point(signature.bytes()) {
+                    Ok((r, s)) => (r, s),
+                    Err(()) => {
+                        return Err(trace_error!(format!(
+                            "failed to decode EC point '{:?}'",
+                            signature.bytes()
+                        )))
+                    }
+                };
                 if r.len() > coordinate_width || s.len() > coordinate_width {
-                    return Err(());
+                    return Err(trace_error!(format!(
+                        "bad EC point '{:?}'",
+                        signature.bytes()
+                    )));
                 }
                 let mut signature_value = Vec::with_capacity(2 * coordinate_width);
                 let r_padding = vec![0; coordinate_width - r.len()];
@@ -850,11 +938,27 @@ pub fn list_objects() -> Vec<Object> {
     objects
 }
 
-fn get_key_attribute<T: TCFType + Clone>(key: &SecKey, attr: CFStringRef) -> Result<T, ()> {
-    let attributes: CFDictionary<CFString, T> = SECURITY_FRAMEWORK.sec_key_copy_attributes(&key)?;
+fn get_key_attribute<T: TCFType + Clone>(
+    key: &SecKey,
+    attr: CFStringRef,
+) -> Result<T, TracingError> {
+    if attr.is_null() {
+        return Err(trace_error!(
+            "get_key_attribute given null attr?".to_string()
+        ));
+    }
+    let attributes: CFDictionary<CFString, T> = SECURITY_FRAMEWORK
+        .sec_key_copy_attributes(&key)
+        .map_err(|e| trace_error_stack!(e))?;
     match attributes.find(attr as *const _) {
         Some(value) => Ok((*value).clone()),
-        None => Err(()),
+        None => {
+            let attr_as_string = unsafe { CFString::wrap_under_get_rule(attr) }.to_string();
+            Err(trace_error!(format!(
+                "couldn't get key attribute {}",
+                attr_as_string
+            )))
+        }
     }
 }
 
