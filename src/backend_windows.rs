@@ -21,7 +21,7 @@ use crate::util::*;
 /// Given a `CERT_INFO`, tries to return the bytes of the subject distinguished name as formatted by
 /// `CertNameToStrA` using the flag `CERT_SIMPLE_NAME_STR`. This is used as the label for the
 /// certificate.
-fn get_cert_subject_dn(cert_info: &CERT_INFO) -> Result<Vec<u8>, ()> {
+fn get_cert_subject_dn(cert_info: &CERT_INFO) -> Result<Vec<u8>, TracingError> {
     let mut cert_info_subject = cert_info.Subject;
     let subject_dn_len = unsafe {
         CertNameToStrA(
@@ -40,11 +40,16 @@ fn get_cert_subject_dn(cert_info: &CERT_INFO) -> Result<Vec<u8>, ()> {
             &mut cert_info_subject,
             CERT_SIMPLE_NAME_STR,
             subject_dn_string_bytes.as_mut_ptr() as *mut i8,
-            subject_dn_string_bytes.len().try_into().map_err(|_| ())?,
+            subject_dn_string_bytes
+                .len()
+                .try_into()
+                .map_err(|_| trace_error!(format!("subject dn too long for DWORD?")))?,
         )
     };
     if subject_dn_len as usize != subject_dn_string_bytes.len() {
-        return Err(());
+        return Err(trace_error!(
+            "CertNameToStrA gave inconsistent lengths?".to_string()
+        ));
     }
     Ok(subject_dn_string_bytes)
 }
@@ -70,14 +75,14 @@ pub struct Cert {
 }
 
 impl Cert {
-    fn new(cert: PCCERT_CONTEXT) -> Result<Cert, ()> {
+    fn new(cert: PCCERT_CONTEXT) -> Result<Cert, TracingError> {
         let cert = unsafe { &*cert };
         let cert_info = unsafe { &*cert.pCertInfo };
         let value =
             unsafe { slice::from_raw_parts(cert.pbCertEncoded, cert.cbCertEncoded as usize) };
         let value = value.to_vec();
         let id = Sha256::digest(&value).to_vec();
-        let label = get_cert_subject_dn(&cert_info)?;
+        let label = get_cert_subject_dn(&cert_info).map_err(|e| trace_error_stack!(e))?;
         let issuer = unsafe {
             slice::from_raw_parts(cert_info.Issuer.pbData, cert_info.Issuer.cbData as usize)
         };
@@ -94,8 +99,8 @@ impl Cert {
         };
         let subject = subject.to_vec();
         Ok(Cert {
-            class: serialize_uint(CKO_CERTIFICATE)?,
-            token: serialize_uint(CK_TRUE)?,
+            class: serialize_uint(CKO_CERTIFICATE).map_err(|e| trace_error_stack!(e))?,
+            token: serialize_uint(CK_TRUE).map_err(|e| trace_error_stack!(e))?,
             id,
             label,
             value,
@@ -200,7 +205,7 @@ impl Deref for CertContext {
 struct NCryptKeyHandle(NCRYPT_KEY_HANDLE);
 
 impl NCryptKeyHandle {
-    fn from_cert(cert: &CertContext) -> Result<NCryptKeyHandle, ()> {
+    fn from_cert(cert: &CertContext) -> Result<NCryptKeyHandle, TracingError> {
         let mut key_handle = 0;
         let mut key_spec = 0;
         let mut must_free = 0;
@@ -214,16 +219,20 @@ impl NCryptKeyHandle {
                 &mut must_free,
             ) != 1
             {
-                return Err(());
+                return Err(trace_error!(
+                    "CryptAcquireCertificatePrivateKey failed".to_string()
+                ));
             }
         }
         if key_spec != CERT_NCRYPT_KEY_SPEC {
-            error!("CryptAcquireCertificatePrivateKey returned non-ncrypt handle");
-            return Err(());
+            return Err(trace_error!(
+                "CryptAcquireCertificatePrivateKey returned non-ncrypt handle".to_string()
+            ));
         }
         if must_free == 0 {
-            error!("CryptAcquireCertificatePrivateKey returned shared key handle");
-            return Err(());
+            return Err(trace_error!(
+                "CryptAcquireCertificatePrivateKey returned shared key handle".to_string()
+            ));
         }
         Ok(NCryptKeyHandle(key_handle as NCRYPT_KEY_HANDLE))
     }
@@ -267,7 +276,10 @@ enum SignParams {
 }
 
 impl SignParams {
-    fn new(key_type: KeyType, params: &Option<CK_RSA_PKCS_PSS_PARAMS>) -> Result<SignParams, ()> {
+    fn new(
+        key_type: KeyType,
+        params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
+    ) -> Result<SignParams, TracingError> {
         // EC is easy, so handle that first.
         match key_type {
             KeyType::EC => return Ok(SignParams::EC),
@@ -290,11 +302,10 @@ impl SignParams {
             CKM_SHA384 => SHA384_ALGORITHM_STRING,
             CKM_SHA512 => SHA512_ALGORITHM_STRING,
             _ => {
-                error!(
+                return Err(trace_error!(format!(
                     "unsupported algorithm to use with RSA-PSS: {}",
                     unsafe_packed_field_access!(pss_params.hashAlg)
-                );
-                return Err(());
+                )));
             }
         };
         Ok(SignParams::RSA_PSS(BCRYPT_PSS_PADDING_INFO {
@@ -355,7 +366,7 @@ pub struct Key {
 }
 
 impl Key {
-    fn new(cert_context: PCCERT_CONTEXT) -> Result<Key, ()> {
+    fn new(cert_context: PCCERT_CONTEXT) -> Result<Key, TracingError> {
         let cert = unsafe { *cert_context };
         let cert_der =
             unsafe { slice::from_raw_parts(cert.pbCertEncoded, cert.cbCertEncoded as usize) };
@@ -367,15 +378,16 @@ impl Key {
         let spki = &cert_info.SubjectPublicKeyInfo;
         let algorithm_oid = unsafe { CStr::from_ptr(spki.Algorithm.pszObjId) }
             .to_str()
-            .map_err(|_| ())?;
+            .map_err(|_| trace_error!("couldn't convert CStr to str?".to_string()))?;
         let (key_type_enum, key_type_attribute) = if algorithm_oid == szOID_RSA_RSA {
             if spki.PublicKey.cUnusedBits != 0 {
-                return Err(());
+                return Err(trace_error!("public key spki has unused bits".to_string()));
             }
             let public_key_bytes = unsafe {
                 std::slice::from_raw_parts(spki.PublicKey.pbData, spki.PublicKey.cbData as usize)
             };
-            let modulus_value = read_rsa_modulus(public_key_bytes)?;
+            let modulus_value = read_rsa_modulus(public_key_bytes)
+                .map_err(|_| trace_error!("couldn't decode modulus".to_string()))?;
             modulus = Some(modulus_value);
             (KeyType::RSA, CKK_RSA)
         } else if algorithm_oid == szOID_ECC_PUBLIC_KEY {
@@ -386,15 +398,18 @@ impl Key {
             );
             (KeyType::EC, CKK_EC)
         } else {
-            return Err(());
+            return Err(trace_error!(format!(
+                "unsupported key type '{}'",
+                algorithm_oid
+            )));
         };
         Ok(Key {
             cert: CertContext::new(cert_context),
-            class: serialize_uint(CKO_PRIVATE_KEY)?,
-            token: serialize_uint(CK_TRUE)?,
+            class: serialize_uint(CKO_PRIVATE_KEY).map_err(|e| trace_error_stack!(e))?,
+            token: serialize_uint(CK_TRUE).map_err(|e| trace_error_stack!(e))?,
             id,
-            private: serialize_uint(CK_TRUE)?,
-            key_type: serialize_uint(key_type_attribute)?,
+            private: serialize_uint(CK_TRUE).map_err(|e| trace_error_stack!(e))?,
+            key_type: serialize_uint(key_type_attribute).map_err(|e| trace_error_stack!(e))?,
             modulus,
             ec_params,
             key_type_enum,
@@ -483,10 +498,10 @@ impl Key {
         &self,
         data: &[u8],
         params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
-    ) -> Result<usize, ()> {
+    ) -> Result<usize, TracingError> {
         match self.sign_internal(data, params, false) {
             Ok(dummy_signature_bytes) => Ok(dummy_signature_bytes.len()),
-            Err(()) => Err(()),
+            Err(e) => Err(trace_error_stack!(e)),
         }
     }
 
@@ -494,8 +509,9 @@ impl Key {
         &self,
         data: &[u8],
         params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
-    ) -> Result<Vec<u8>, ()> {
+    ) -> Result<Vec<u8>, TracingError> {
         self.sign_internal(data, params, true)
+            .map_err(|e| trace_error_stack!(e))
     }
 
     /// data: the data to sign
@@ -506,11 +522,12 @@ impl Key {
         data: &[u8],
         params: &Option<CK_RSA_PKCS_PSS_PARAMS>,
         do_signature: bool,
-    ) -> Result<Vec<u8>, ()> {
+    ) -> Result<Vec<u8>, TracingError> {
         // Acquiring a handle on the key can cause the OS to show some UI to the user, so we do this
         // as late as possible (i.e. here).
-        let key = NCryptKeyHandle::from_cert(&self.cert)?;
-        let mut sign_params = SignParams::new(self.key_type_enum, params)?;
+        let key = NCryptKeyHandle::from_cert(&self.cert).map_err(|e| trace_error_stack!(e))?;
+        let mut sign_params =
+            SignParams::new(self.key_type_enum, params).map_err(|e| trace_error_stack!(e))?;
         let params_ptr = sign_params.params_ptr();
         let flags = sign_params.flags();
         let mut data = data.to_vec();
@@ -522,7 +539,9 @@ impl Key {
                 *key,
                 params_ptr,
                 data.as_mut_ptr(),
-                data.len().try_into().map_err(|_| ())?,
+                data.len()
+                    .try_into()
+                    .map_err(|_| trace_error!(format!("couldn't fit {} into DWORD", data.len())))?,
                 std::ptr::null_mut(),
                 0,
                 &mut signature_len,
@@ -531,11 +550,10 @@ impl Key {
         };
         // 0 is "ERROR_SUCCESS" (but "ERROR_SUCCESS" is unsigned, whereas SECURITY_STATUS is signed)
         if status != 0 {
-            error!(
+            return Err(trace_error!(format!(
                 "NCryptSignHash failed trying to get signature buffer length, {}",
                 status
-            );
-            return Err(());
+            )));
         }
         let mut signature = vec![0; signature_len as usize];
         if !do_signature {
@@ -547,7 +565,9 @@ impl Key {
                 *key,
                 params_ptr,
                 data.as_mut_ptr(),
-                data.len().try_into().map_err(|_| ())?,
+                data.len()
+                    .try_into()
+                    .map_err(|_| trace_error!(format!("couldn't fit {} into DWORD", data.len())))?,
                 signature.as_mut_ptr(),
                 signature_len,
                 &mut final_signature_len,
@@ -555,15 +575,17 @@ impl Key {
             )
         };
         if status != 0 {
-            error!("NCryptSignHash failed signing data {}", status);
-            return Err(());
+            // TODO: get windows error string?
+            return Err(trace_error!(format!(
+                "NCryptSignHash failed signing data {}",
+                status
+            )));
         }
         if final_signature_len != signature_len {
-            error!(
+            return Err(trace_error!(format!(
                 "NCryptSignHash: inconsistent signature lengths? {} != {}",
                 final_signature_len, signature_len
-            );
-            return Err(());
+            )));
         }
         Ok(signature)
     }
@@ -637,18 +659,13 @@ pub const SUPPORTED_ATTRIBUTES: &[CK_ATTRIBUTE_TYPE] = &[
 
 /// Attempts to enumerate certificates with private keys exposed by the OS. Currently only looks in
 /// the "My" cert store of the current user. In the future this may look in more locations.
-pub fn list_objects() -> Vec<Object> {
+pub fn list_objects() -> Result<Vec<Object>, TracingError> {
     let mut objects = Vec::new();
     let location_flags = CERT_SYSTEM_STORE_CURRENT_USER // TODO: loop over multiple locations
         | CERT_STORE_OPEN_EXISTING_FLAG
         | CERT_STORE_READONLY_FLAG;
-    let store_name = match CString::new("My") {
-        Ok(store_name) => store_name,
-        Err(null_error) => {
-            error!("CString::new given input with a null byte: {}", null_error);
-            return objects;
-        }
-    };
+    let store_name = CString::new("My")
+        .map_err(|e| trace_error!(format!("CString::new given input with a null byte: {}", e)))?;
     let store = CertStore::new(unsafe {
         CertOpenStore(
             CERT_STORE_PROV_SYSTEM_REGISTRY_A,
@@ -659,8 +676,7 @@ pub fn list_objects() -> Vec<Object> {
         )
     });
     if store.is_null() {
-        error!("CertOpenStore failed");
-        return objects;
+        return Err(trace_error!("CertOpenStore failed".to_string()));
     }
     let mut cert_context: PCCERT_CONTEXT = std::ptr::null_mut();
     loop {
@@ -679,14 +695,20 @@ pub fn list_objects() -> Vec<Object> {
         }
         let cert = match Cert::new(cert_context) {
             Ok(cert) => cert,
-            Err(()) => continue,
+            Err(e) => {
+                error!("Cert::new failed: {}", e);
+                continue;
+            }
         };
         let key = match Key::new(cert_context) {
             Ok(key) => key,
-            Err(()) => continue,
+            Err(e) => {
+                error!("Key::new failed: {}", e);
+                continue;
+            }
         };
         objects.push(Object::Cert(cert));
         objects.push(Object::Key(key));
     }
-    objects
+    Ok(objects)
 }

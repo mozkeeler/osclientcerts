@@ -982,7 +982,10 @@ fn list_identities() -> Result<Vec<(Cert, Key)>, TracingError> {
         let mut result = std::ptr::null();
         let status = SecItemCopyMatching(dict.as_CFTypeRef() as CFDictionaryRef, &mut result);
         if status != errSecSuccess {
-            return Err(trace_error!(format!("SecItemCopyMatching failed: {}", status)));
+            return Err(trace_error!(format!(
+                "SecItemCopyMatching failed: {}",
+                status
+            )));
         }
         if result.is_null() {
             info!("SecItemCopyMatching returned null result");
