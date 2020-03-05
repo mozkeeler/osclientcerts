@@ -710,8 +710,8 @@ impl Key {
                 let public_key = SECURITY_FRAMEWORK
                     .sec_key_copy_external_representation(&key)
                     .map_err(|e| trace_error_stack!(e))?;
-                let modulus_value = read_rsa_modulus(public_key.bytes())
-                    .map_err(|_| trace_error!("couldn't decode modulus".to_string()))?;
+                let modulus_value =
+                    read_rsa_modulus(public_key.bytes()).map_err(|e| trace_error_stack!(e))?;
                 modulus = Some(modulus_value);
                 (KeyType::RSA, CKK_RSA)
             } else if key_type == sec_attr_key_type_ec {
@@ -861,15 +861,8 @@ impl Key {
                 // concatenation of r and s, the coordinates of the point on
                 // the curve. r and s must be 0-padded to be coordinate_width
                 // total bytes.
-                let (r, s) = match read_ec_sig_point(signature.bytes()) {
-                    Ok((r, s)) => (r, s),
-                    Err(()) => {
-                        return Err(trace_error!(format!(
-                            "failed to decode EC point '{:?}'",
-                            signature.bytes()
-                        )))
-                    }
-                };
+                let (r, s) =
+                    read_ec_sig_point(signature.bytes()).map_err(|e| trace_error_stack!(e))?;
                 if r.len() > coordinate_width || s.len() > coordinate_width {
                     return Err(trace_error!(format!(
                         "bad EC point '{:?}'",

@@ -386,8 +386,8 @@ impl Key {
             let public_key_bytes = unsafe {
                 std::slice::from_raw_parts(spki.PublicKey.pbData, spki.PublicKey.cbData as usize)
             };
-            let modulus_value = read_rsa_modulus(public_key_bytes)
-                .map_err(|_| trace_error!("couldn't decode modulus".to_string()))?;
+            let modulus_value =
+                read_rsa_modulus(public_key_bytes).map_err(|e| trace_error_stack!(e));
             modulus = Some(modulus_value);
             (KeyType::RSA, CKK_RSA)
         } else if algorithm_oid == szOID_ECC_PUBLIC_KEY {

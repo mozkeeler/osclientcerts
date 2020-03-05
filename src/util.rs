@@ -96,12 +96,18 @@ pub fn serialize_uint<T: TryInto<u64> + fmt::Display + Copy>(
 ///     modulus           INTEGER,  -- n
 ///     publicExponent    INTEGER   -- e
 /// }
-pub fn read_rsa_modulus(public_key: &[u8]) -> Result<Vec<u8>, ()> {
-    let mut sequence = Sequence::new(public_key)?;
-    let modulus_value = sequence.read_unsigned_integer()?;
-    let _exponent = sequence.read_unsigned_integer()?;
+pub fn read_rsa_modulus(public_key: &[u8]) -> Result<Vec<u8>, TracingError> {
+    let mut sequence = Sequence::new(public_key).map_err(|e| trace_error_stack!(e))?;
+    let modulus_value = sequence
+        .read_unsigned_integer()
+        .map_err(|e| trace_error_stack!(e))?;
+    let _exponent = sequence
+        .read_unsigned_integer()
+        .map_err(|e| trace_error_stack!(e))?;
     if !sequence.at_end() {
-        return Err(());
+        return Err(trace_error!(
+            "unexpected trailing data after public key".to_string()
+        ));
     }
     Ok(modulus_value.to_vec())
 }
@@ -112,12 +118,18 @@ pub fn read_rsa_modulus(public_key: &[u8]) -> Result<Vec<u8>, ()> {
 ///        r     INTEGER,
 ///        s     INTEGER  }
 #[cfg(target_os = "macos")]
-pub fn read_ec_sig_point<'a>(signature: &'a [u8]) -> Result<(&'a [u8], &'a [u8]), ()> {
-    let mut sequence = Sequence::new(signature)?;
-    let r = sequence.read_unsigned_integer()?;
-    let s = sequence.read_unsigned_integer()?;
+pub fn read_ec_sig_point<'a>(signature: &'a [u8]) -> Result<(&'a [u8], &'a [u8]), TracingError> {
+    let mut sequence = Sequence::new(signature).map_err(|e| trace_error_stack!(e))?;
+    let r = sequence
+        .read_unsigned_integer()
+        .map_err(|e| trace_error_stack!(e))?;
+    let s = sequence
+        .read_unsigned_integer()
+        .map_err(|e| trace_error_stack!(e))?;
     if !sequence.at_end() {
-        return Err(());
+        return Err(trace_error!(
+            "unexpected trailing data after ec signature".to_string()
+        ));
     }
     Ok((r, s))
 }
@@ -128,7 +140,7 @@ pub fn read_ec_sig_point<'a>(signature: &'a [u8]) -> Result<(&'a [u8], &'a [u8])
 macro_rules! try_read_bytes {
     ($data:ident, $len:expr) => {{
         if $data.len() < $len {
-            return Err(());
+            return Err(trace_error!("input truncated".to_string()));
         }
         $data.split_at($len)
     }};
@@ -149,12 +161,16 @@ struct Sequence<'a> {
 }
 
 impl<'a> Sequence<'a> {
-    fn new(input: &'a [u8]) -> Result<Sequence<'a>, ()> {
+    fn new(input: &'a [u8]) -> Result<Sequence<'a>, TracingError> {
         let mut der = Der::new(input);
-        let sequence_bytes = der.read(SEQUENCE | CONSTRUCTED)?;
+        let sequence_bytes = der
+            .read(SEQUENCE | CONSTRUCTED)
+            .map_err(|e| trace_error_stack!(e))?;
         // We're assuming we want to consume the entire input for now.
         if !der.at_end() {
-            return Err(());
+            return Err(trace_error!(
+                "unexpected trailing data after SEQUENCE".to_string()
+            ));
         }
         Ok(Sequence {
             contents: Der::new(sequence_bytes),
@@ -162,10 +178,13 @@ impl<'a> Sequence<'a> {
     }
 
     // TODO: we're not exhaustively validating this integer
-    fn read_unsigned_integer(&mut self) -> Result<&'a [u8], ()> {
-        let bytes = self.contents.read(INTEGER)?;
+    fn read_unsigned_integer(&mut self) -> Result<&'a [u8], TracingError> {
+        let bytes = self
+            .contents
+            .read(INTEGER)
+            .map_err(|e| trace_error_stack!(e))?;
         if bytes.is_empty() {
-            return Err(());
+            return Err(trace_error!("empty INTEGER?".to_string()));
         }
         // There may be a leading zero (we should also check that the first bit
         // of the rest of the integer is set).
@@ -197,11 +216,14 @@ impl<'a> Der<'a> {
     // be in an inconsistent state. As long as this implementation isn't exposed to code that would
     // use it incorrectly (i.e. it stays in this module and we only expose a stateless API), it
     // should be safe.
-    fn read(&mut self, tag: u8) -> Result<&'a [u8], ()> {
+    fn read(&mut self, tag: u8) -> Result<&'a [u8], TracingError> {
         let contents = self.contents;
         let (tag_read, rest) = try_read_bytes!(contents, 1);
         if tag_read[0] != tag {
-            return Err(());
+            return Err(trace_error!(format!(
+                "expected tag {}, got {}",
+                tag, tag_read[0]
+            )));
         }
         let (length1, rest) = try_read_bytes!(rest, 1);
         let (length, to_read_from) = if length1[0] < 0x80 {
@@ -209,20 +231,28 @@ impl<'a> Der<'a> {
         } else if length1[0] == 0x81 {
             let (length, rest) = try_read_bytes!(rest, 1);
             if length[0] < 0x80 {
-                return Err(());
+                return Err(trace_error!(format!(
+                    "length of {} not in shortest form",
+                    length[0]
+                )));
             }
             (length[0] as usize, rest)
         } else if length1[0] == 0x82 {
             let (lengths, rest) = try_read_bytes!(rest, 2);
             let length = (&mut &lengths[..])
                 .read_u16::<BigEndian>()
-                .map_err(|_| ())?;
+                .map_err(|_| trace_error!("couldn't read u16 from 2-byte slice?".to_string()))?;
             if length < 256 {
-                return Err(());
+                return Err(trace_error!(format!(
+                    "length of {} not in shortest form",
+                    length
+                )));
             }
             (length as usize, rest)
         } else {
-            return Err(());
+            return Err(trace_error!(
+                "DER longer than 65535 bytes not supported".to_string()
+            ));
         };
         let (contents, rest) = try_read_bytes!(to_read_from, length);
         self.contents = rest;
