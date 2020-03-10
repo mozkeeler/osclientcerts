@@ -73,6 +73,25 @@ pub fn read_ec_sig_point<'a>(signature: &'a [u8]) -> Result<(&'a [u8], &'a [u8])
     Ok((r, s))
 }
 
+/// Given a slice of DER bytes representing an X.509 certificate, extracts the encoded serial
+/// number. Does not verify that the remainder of the certificate is in any way well-formed.
+///   Certificate  ::=  SEQUENCE  {
+///           tbsCertificate       TBSCertificate,
+///           signatureAlgorithm   AlgorithmIdentifier,
+///           signatureValue       BIT STRING  }
+///
+///      TBSCertificate  ::=  SEQUENCE  {
+///           version         [0]  EXPLICIT Version DEFAULT v1,
+///           serialNumber         CertificateSerialNumber,
+///           ...
+pub fn read_serial_number<'a>(certificate: &'a [u8]) -> Result<&'a [u8], ()> {
+    let mut certificate_sequence = Sequence::new(certificate)?;
+    let mut tbs_certificate_sequence = certificate_sequence.read_sequence()?;
+    let _version = tbs_certificate_sequence.read_tagged_value(0)?;
+    let serial_number = tbs_certificate_sequence.read_sequence_component(INTEGER)?;
+    Ok(serial_number)
+}
+
 /// Helper macro for reading some bytes from a slice while checking the slice is long enough.
 /// Returns a pair consisting of a slice of the bytes read and a slice of the rest of the bytes
 /// from the original slice.
@@ -91,6 +110,8 @@ const INTEGER: u8 = 0x02;
 const SEQUENCE: u8 = 0x10;
 /// ASN.1 tag modifier identifying an item as constructed.
 const CONSTRUCTED: u8 = 0x20;
+/// ASN.1 tag modifier identifying an item as context-specific.
+const CONTEXT_SPECIFIC: u8 = 0x80;
 
 /// A helper struct for reading items from a DER SEQUENCE (in this case, all sequences are
 /// assumed to be CONSTRUCTED).
@@ -126,6 +147,23 @@ impl<'a> Sequence<'a> {
         } else {
             Ok(bytes)
         }
+    }
+
+    fn read_sequence(&mut self) -> Result<Sequence<'a>, ()> {
+        let sequence_bytes = self.contents.read(SEQUENCE | CONSTRUCTED)?;
+        Ok(Sequence {
+            contents: Der::new(sequence_bytes),
+        })
+    }
+
+    fn read_tagged_value(&mut self, tag: u8) -> Result<&'a [u8], ()> {
+        let tagged_value_bytes = self.contents.read(CONTEXT_SPECIFIC | CONSTRUCTED | tag)?;
+        Ok(tagged_value_bytes)
+    }
+
+    fn read_sequence_component(&mut self, tag: u8) -> Result<&'a [u8], ()> {
+        let sequence_component_bytes = self.contents.read(tag)?;
+        Ok(sequence_component_bytes)
     }
 
     fn at_end(&self) -> bool {
