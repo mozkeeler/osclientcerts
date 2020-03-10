@@ -80,10 +80,12 @@ pub fn read_ec_sig_point<'a>(signature: &'a [u8]) -> Result<(&'a [u8], &'a [u8])
 ///           signatureAlgorithm   AlgorithmIdentifier,
 ///           signatureValue       BIT STRING  }
 ///
-///      TBSCertificate  ::=  SEQUENCE  {
+///   TBSCertificate  ::=  SEQUENCE  {
 ///           version         [0]  EXPLICIT Version DEFAULT v1,
 ///           serialNumber         CertificateSerialNumber,
 ///           ...
+///
+///   CertificateSerialNumber  ::=  INTEGER
 pub fn read_serial_number<'a>(certificate: &'a [u8]) -> Result<&'a [u8], ()> {
     let mut certificate_sequence = Sequence::new(certificate)?;
     let mut tbs_certificate_sequence = certificate_sequence.read_sequence()?;
