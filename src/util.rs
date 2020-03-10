@@ -342,6 +342,7 @@ mod tests {
         let empty = Vec::new();
         assert!(read_rsa_modulus(&empty).is_err());
         assert!(read_ec_sig_point(&empty).is_err());
+        assert!(read_serial_number(&empty).is_err());
     }
 
     #[test]
@@ -349,6 +350,7 @@ mod tests {
         let empty = vec![SEQUENCE | CONSTRUCTED];
         assert!(read_rsa_modulus(&empty).is_err());
         assert!(read_ec_sig_point(&empty).is_err());
+        assert!(read_serial_number(&empty).is_err());
     }
 
     #[test]
@@ -358,5 +360,20 @@ mod tests {
         assert!(result.is_ok());
         let modulus = result.unwrap();
         assert_eq!(modulus, include_bytes!("../test/modulus.bin").to_vec());
+    }
+
+    #[test]
+    fn test_read_serial_number() {
+        let certificate = include_bytes!("../test/certificate.bin");
+        let result = read_serial_number(certificate);
+        assert!(result.is_ok());
+        let serial_number = result.unwrap();
+        assert_eq!(
+            serial_number,
+            &[
+                0x3f, 0xed, 0x7b, 0x43, 0x47, 0x8a, 0x53, 0x42, 0x5b, 0x0d, 0x50, 0xe1, 0x37, 0x88,
+                0x2a, 0x20, 0x3f, 0x31, 0x17, 0x20
+            ]
+        );
     }
 }
