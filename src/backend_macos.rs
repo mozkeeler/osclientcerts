@@ -414,8 +414,7 @@ impl Cert {
         let id = Sha256::digest(&der).to_vec();
         let issuer =
             SECURITY_FRAMEWORK.sec_certificate_copy_normalized_issuer_sequence(&certificate)?;
-        let serial_number = read_serial_number(&der)?;
-        let serial_number = serial_number.to_vec();
+        let serial_number = read_encoded_serial_number(&der)?;
         let subject =
             SECURITY_FRAMEWORK.sec_certificate_copy_normalized_subject_sequence(&certificate)?;
         Ok(Cert {
